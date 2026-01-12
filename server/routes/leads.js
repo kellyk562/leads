@@ -13,22 +13,24 @@ const validateLead = [
 ];
 
 // Get all leads with optional filtering
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const { search, priority, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = 'SELECT * FROM leads WHERE 1=1';
     const params = [];
+    let paramIndex = 1;
 
     if (search) {
-      sql += ` AND (dispensary_name LIKE ? OR contact_name LIKE ? OR manager_name LIKE ? OR owner_name LIKE ? OR address LIKE ? OR city LIKE ?)`;
-      const searchParam = `%${search}%`;
-      params.push(searchParam, searchParam, searchParam, searchParam, searchParam, searchParam);
+      sql += ` AND (dispensary_name ILIKE $${paramIndex} OR contact_name ILIKE $${paramIndex} OR manager_name ILIKE $${paramIndex} OR owner_name ILIKE $${paramIndex} OR address ILIKE $${paramIndex} OR city ILIKE $${paramIndex})`;
+      params.push(`%${search}%`);
+      paramIndex++;
     }
 
     if (priority && ['Low', 'Medium', 'High'].includes(priority)) {
-      sql += ` AND priority = ?`;
+      sql += ` AND priority = $${paramIndex}`;
       params.push(priority);
+      paramIndex++;
     }
 
     const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority'];
@@ -37,7 +39,7 @@ router.get('/', (req, res) => {
 
     sql += ` ORDER BY ${sortColumn} ${sortOrder}`;
 
-    const leads = db.all(sql, params);
+    const leads = await db.all(sql, params);
     res.json(leads);
   } catch (error) {
     console.error('Error fetching leads:', error);
@@ -46,18 +48,18 @@ router.get('/', (req, res) => {
 });
 
 // Get today's callbacks (leads scheduled for today's day of week)
-router.get('/callbacks/today', (req, res) => {
+router.get('/callbacks/today', async (req, res) => {
   try {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = days[new Date().getDay()];
 
     const sql = `
       SELECT * FROM leads
-      WHERE callback_days LIKE ?
+      WHERE callback_days ILIKE $1
       ORDER BY priority DESC, dispensary_name ASC
     `;
 
-    const leads = db.all(sql, [`%${todayDay}%`]);
+    const leads = await db.all(sql, [`%${todayDay}%`]);
     res.json(leads);
   } catch (error) {
     console.error('Error fetching today callbacks:', error);
@@ -66,7 +68,7 @@ router.get('/callbacks/today', (req, res) => {
 });
 
 // Get all leads with callback days set (for upcoming section)
-router.get('/callbacks/upcoming', (req, res) => {
+router.get('/callbacks/upcoming', async (req, res) => {
   try {
     const sql = `
       SELECT * FROM leads
@@ -74,7 +76,7 @@ router.get('/callbacks/upcoming', (req, res) => {
       ORDER BY priority DESC, dispensary_name ASC
     `;
 
-    const leads = db.all(sql);
+    const leads = await db.all(sql);
     res.json(leads);
   } catch (error) {
     console.error('Error fetching upcoming callbacks:', error);
@@ -83,32 +85,36 @@ router.get('/callbacks/upcoming', (req, res) => {
 });
 
 // Get dashboard statistics
-router.get('/stats', (req, res) => {
+router.get('/stats', async (req, res) => {
   try {
     const stats = {};
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = days[new Date().getDay()];
 
     // Total leads
-    stats.total = db.get('SELECT COUNT(*) as count FROM leads')?.count || 0;
+    const totalResult = await db.get('SELECT COUNT(*) as count FROM leads');
+    stats.total = totalResult?.count || 0;
 
     // Today's callbacks count (leads scheduled for today's day of week)
-    stats.todayCallbacks = db.get(`
+    const todayResult = await db.get(`
       SELECT COUNT(*) as count FROM leads
-      WHERE callback_days LIKE ?
-    `, [`%${todayDay}%`])?.count || 0;
+      WHERE callback_days ILIKE $1
+    `, [`%${todayDay}%`]);
+    stats.todayCallbacks = todayResult?.count || 0;
 
     // Leads with callbacks scheduled
-    stats.scheduledCallbacks = db.get(`
+    const scheduledResult = await db.get(`
       SELECT COUNT(*) as count FROM leads
       WHERE callback_days IS NOT NULL AND callback_days != '[]' AND callback_days != ''
-    `)?.count || 0;
+    `);
+    stats.scheduledCallbacks = scheduledResult?.count || 0;
 
     // This week's new leads
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    stats.newThisWeek = db.get(`
-      SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) >= DATE(?)
-    `, [weekAgo])?.count || 0;
+    const newResult = await db.get(`
+      SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) >= DATE($1)
+    `, [weekAgo]);
+    stats.newThisWeek = newResult?.count || 0;
 
     res.json(stats);
   } catch (error) {
@@ -118,22 +124,22 @@ router.get('/stats', (req, res) => {
 });
 
 // Get single lead by ID
-router.get('/:id', param('id').isInt(), (req, res) => {
+router.get('/:id', param('id').isInt(), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const lead = db.get('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const lead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
 
     if (!lead) {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
     // Get contact history
-    const history = db.all(`
-      SELECT * FROM contact_history WHERE lead_id = ? ORDER BY contact_date DESC
+    const history = await db.all(`
+      SELECT * FROM contact_history WHERE lead_id = $1 ORDER BY contact_date DESC
     `, [req.params.id]);
 
     res.json({ ...lead, contact_history: history });
@@ -144,7 +150,7 @@ router.get('/:id', param('id').isInt(), (req, res) => {
 });
 
 // Create new lead
-router.post('/', validateLead, (req, res) => {
+router.post('/', validateLead, async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
@@ -186,17 +192,18 @@ router.post('/', validateLead, (req, res) => {
         dispensary_number, contact_name, contact_position, manager_name, owner_name,
         contact_number, contact_email, website, current_pos_system,
         notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, callback_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+      RETURNING id
     `;
 
-    const result = db.run(sql, [
+    const result = await db.run(sql, [
       contact_date, dispensary_name, address, city, state, zip_code,
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
       notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, callback_date || null
     ]);
 
-    const newLead = db.get('SELECT * FROM leads WHERE id = ?', [result.lastInsertRowid]);
+    const newLead = await db.get('SELECT * FROM leads WHERE id = $1', [result.lastInsertRowid]);
     res.status(201).json(newLead);
   } catch (error) {
     console.error('Error creating lead:', error);
@@ -205,14 +212,14 @@ router.post('/', validateLead, (req, res) => {
 });
 
 // Update lead
-router.put('/:id', [param('id').isInt(), ...validateLead], (req, res) => {
+router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const existing = db.get('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
     if (!existing) {
       return res.status(404).json({ error: 'Lead not found' });
     }
@@ -248,33 +255,33 @@ router.put('/:id', [param('id').isInt(), ...validateLead], (req, res) => {
 
     const sql = `
       UPDATE leads SET
-        contact_date = ?,
-        dispensary_name = ?,
-        address = ?,
-        city = ?,
-        state = ?,
-        zip_code = ?,
-        dispensary_number = ?,
-        contact_name = ?,
-        contact_position = ?,
-        manager_name = ?,
-        owner_name = ?,
-        contact_number = ?,
-        contact_email = ?,
-        website = ?,
-        current_pos_system = ?,
-        notes = ?,
-        callback_days = ?,
-        callback_time_slots = ?,
-        callback_time_from = ?,
-        callback_time_to = ?,
-        priority = ?,
-        callback_date = ?,
+        contact_date = $1,
+        dispensary_name = $2,
+        address = $3,
+        city = $4,
+        state = $5,
+        zip_code = $6,
+        dispensary_number = $7,
+        contact_name = $8,
+        contact_position = $9,
+        manager_name = $10,
+        owner_name = $11,
+        contact_number = $12,
+        contact_email = $13,
+        website = $14,
+        current_pos_system = $15,
+        notes = $16,
+        callback_days = $17,
+        callback_time_slots = $18,
+        callback_time_from = $19,
+        callback_time_to = $20,
+        priority = $21,
+        callback_date = $22,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE id = $23
     `;
 
-    db.run(sql, [
+    await db.run(sql, [
       contact_date, dispensary_name, address, city, state, zip_code,
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
@@ -283,7 +290,7 @@ router.put('/:id', [param('id').isInt(), ...validateLead], (req, res) => {
       req.params.id
     ]);
 
-    const updatedLead = db.get('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
     res.json(updatedLead);
   } catch (error) {
     console.error('Error updating lead:', error);
@@ -295,36 +302,30 @@ router.put('/:id', [param('id').isInt(), ...validateLead], (req, res) => {
 router.post('/:id/history', [
   param('id').isInt(),
   body('contact_method').optional().isIn(['Phone', 'Email', 'In-Person', 'Text', 'Other']),
-], (req, res) => {
+], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const existing = db.get('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
     if (!existing) {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
     const { contact_method, contact_person, notes, outcome, next_callback } = req.body;
 
-    const result = db.run(`
+    const result = await db.run(`
       INSERT INTO contact_history (lead_id, contact_method, contact_person, notes, outcome, next_callback)
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id
     `, [req.params.id, contact_method, contact_person, notes, outcome, next_callback]);
 
-    // Update lead's callback_datetime if next_callback is provided
-    if (next_callback) {
-      db.run(`
-        UPDATE leads SET callback_datetime = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-      `, [next_callback, req.params.id]);
-    }
-
     // Update lead's updated_at
-    db.run(`UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [req.params.id]);
+    await db.run(`UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [req.params.id]);
 
-    const newHistory = db.get('SELECT * FROM contact_history WHERE id = ?', [result.lastInsertRowid]);
+    const newHistory = await db.get('SELECT * FROM contact_history WHERE id = $1', [result.lastInsertRowid]);
     res.status(201).json(newHistory);
   } catch (error) {
     console.error('Error adding contact history:', error);
@@ -333,15 +334,15 @@ router.post('/:id/history', [
 });
 
 // Get contact history for a lead
-router.get('/:id/history', param('id').isInt(), (req, res) => {
+router.get('/:id/history', param('id').isInt(), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const history = db.all(`
-      SELECT * FROM contact_history WHERE lead_id = ? ORDER BY contact_date DESC
+    const history = await db.all(`
+      SELECT * FROM contact_history WHERE lead_id = $1 ORDER BY contact_date DESC
     `, [req.params.id]);
 
     res.json(history);
@@ -352,21 +353,21 @@ router.get('/:id/history', param('id').isInt(), (req, res) => {
 });
 
 // Delete lead
-router.delete('/:id', param('id').isInt(), (req, res) => {
+router.delete('/:id', param('id').isInt(), async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const existing = db.get('SELECT * FROM leads WHERE id = ?', [req.params.id]);
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
     if (!existing) {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    // Delete contact history first (cascade not automatically handled in sql.js)
-    db.run('DELETE FROM contact_history WHERE lead_id = ?', [req.params.id]);
-    db.run('DELETE FROM leads WHERE id = ?', [req.params.id]);
+    // Delete contact history first (cascade should handle this but being explicit)
+    await db.run('DELETE FROM contact_history WHERE lead_id = $1', [req.params.id]);
+    await db.run('DELETE FROM leads WHERE id = $1', [req.params.id]);
 
     res.json({ message: 'Lead deleted successfully' });
   } catch (error) {
@@ -376,9 +377,9 @@ router.delete('/:id', param('id').isInt(), (req, res) => {
 });
 
 // Export leads to CSV
-router.get('/export/csv', (req, res) => {
+router.get('/export/csv', async (req, res) => {
   try {
-    const leads = db.all('SELECT * FROM leads ORDER BY created_at DESC');
+    const leads = await db.all('SELECT * FROM leads ORDER BY created_at DESC');
 
     // CSV headers
     const headers = [
