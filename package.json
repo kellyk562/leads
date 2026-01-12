@@ -1,0 +1,31 @@
+{
+  "name": "weedhurry-sales-leads",
+  "version": "1.0.0",
+  "description": "Sales Leads Tracker for WeedHurry POS Platform",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "server": "nodemon server/index.js",
+    "client": "npm start --prefix client",
+    "build": "npm install --prefix client && npm run build --prefix client",
+    "postinstall": "npm run build"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "express-validator": "^7.0.1",
+    "helmet": "^7.1.0",
+    "morgan": "^1.10.0",
+    "sql.js": "^1.10.2"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "jimp": "^1.6.0",
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

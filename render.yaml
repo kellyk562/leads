@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: sales-leads
+    runtime: node
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /var/data/leads.db
+    disk:
+      name: leads-data
+      mountPath: /var/data
+      sizeGB: 1

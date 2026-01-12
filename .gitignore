@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Build output
+client/build/
+
+# Database
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test coverage
+coverage/
+
+# Misc
+*.bak
+*.tmp
