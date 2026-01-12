@@ -12,7 +12,8 @@ import {
   FaSort,
   FaPhone,
   FaEnvelope,
-  FaMapMarkerAlt
+  FaMapMarkerAlt,
+  FaDownload
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
 
@@ -69,6 +70,10 @@ function LeadsList() {
     }
   };
 
+  const handleExport = () => {
+    window.location.href = '/api/leads/export/csv';
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return '-';
     try {
@@ -121,9 +126,14 @@ function LeadsList() {
       <div className="leads-container">
         <div className="leads-header">
           <h2>Sales Leads</h2>
-          <Link to="/leads/new" className="btn btn-primary">
-            <FaPlus /> Add New Lead
-          </Link>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={handleExport} className="btn btn-outline">
+              <FaDownload /> Export
+            </button>
+            <Link to="/leads/new" className="btn btn-primary">
+              <FaPlus /> Add New Lead
+            </Link>
+          </div>
         </div>
 
         <div className="filters-bar">

@@ -375,4 +375,57 @@ router.delete('/:id', param('id').isInt(), (req, res) => {
   }
 });
 
+// Export leads to CSV
+router.get('/export/csv', (req, res) => {
+  try {
+    const leads = db.all('SELECT * FROM leads ORDER BY created_at DESC');
+
+    // CSV headers
+    const headers = [
+      'ID', 'Contact Date', 'Dispensary Name', 'Address', 'City', 'State', 'Zip Code',
+      'Dispensary Phone', 'Primary Contact', 'Contact Position', 'Recommended Contact',
+      'Recommended Position', 'Recommended Phone', 'Recommended Email', 'Website',
+      'Current POS', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
+      'Priority', 'Callback Date', 'Created At', 'Updated At'
+    ];
+
+    // Convert leads to CSV rows
+    const rows = leads.map(lead => [
+      lead.id,
+      lead.contact_date || '',
+      `"${(lead.dispensary_name || '').replace(/"/g, '""')}"`,
+      `"${(lead.address || '').replace(/"/g, '""')}"`,
+      lead.city || '',
+      lead.state || '',
+      lead.zip_code || '',
+      lead.dispensary_number || '',
+      `"${(lead.contact_name || '').replace(/"/g, '""')}"`,
+      lead.contact_position || '',
+      `"${(lead.manager_name || '').replace(/"/g, '""')}"`,
+      lead.owner_name || '',
+      lead.contact_number || '',
+      lead.contact_email || '',
+      lead.website || '',
+      lead.current_pos_system || '',
+      `"${(lead.notes || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
+      `"${(lead.callback_days || '').replace(/"/g, '""')}"`,
+      lead.callback_time_from || '',
+      lead.callback_time_to || '',
+      lead.priority || '',
+      lead.callback_date || '',
+      lead.created_at || '',
+      lead.updated_at || ''
+    ].join(','));
+
+    const csv = [headers.join(','), ...rows].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=leads-export-${new Date().toISOString().split('T')[0]}.csv`);
+    res.send(csv);
+  } catch (error) {
+    console.error('Error exporting leads:', error);
+    res.status(500).json({ error: 'Failed to export leads' });
+  }
+});
+
 module.exports = router;
