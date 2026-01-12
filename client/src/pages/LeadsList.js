@@ -71,7 +71,9 @@ function LeadsList() {
   };
 
   const handleExport = () => {
-    window.location.href = '/api/leads/export/csv';
+    const baseUrl = process.env.REACT_APP_API_URL ||
+      (window.location.port === '3000' ? 'http://localhost:5001/api' : '/api');
+    window.location.href = `${baseUrl}/leads/export/csv`;
   };
 
   const formatDate = (dateString) => {
