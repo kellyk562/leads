@@ -317,11 +317,19 @@ router.post('/:id/history', [
 
     const { contact_method, contact_person, notes, outcome, next_callback } = req.body;
 
+    // Convert empty strings to null for PostgreSQL
     const result = await db.run(`
       INSERT INTO contact_history (lead_id, contact_method, contact_person, notes, outcome, next_callback)
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING id
-    `, [req.params.id, contact_method, contact_person, notes, outcome, next_callback]);
+    `, [
+      req.params.id,
+      contact_method || null,
+      contact_person || null,
+      notes || null,
+      outcome || null,
+      next_callback || null
+    ]);
 
     // Update lead's updated_at
     await db.run(`UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE id = $1`, [req.params.id]);
