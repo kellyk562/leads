@@ -27,7 +27,11 @@ export const leadsApi = {
   delete: (id) => api.delete(`/leads/${id}`),
 
   // Get today's callbacks
-  getTodayCallbacks: () => api.get('/leads/callbacks/today'),
+  getTodayCallbacks: () => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayDay = days[new Date().getDay()];
+    return api.get('/leads/callbacks/today', { params: { day: todayDay } });
+  },
 
   // Get upcoming callbacks (next 7 days)
   getUpcomingCallbacks: () => api.get('/leads/callbacks/upcoming'),

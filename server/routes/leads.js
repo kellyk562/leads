@@ -51,7 +51,8 @@ router.get('/', async (req, res) => {
 router.get('/callbacks/today', async (req, res) => {
   try {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const todayDay = days[new Date().getDay()];
+    // Use day from query param (from client's local time) or fall back to server time
+    const todayDay = req.query.day && days.includes(req.query.day) ? req.query.day : days[new Date().getDay()];
 
     const sql = `
       SELECT * FROM leads
