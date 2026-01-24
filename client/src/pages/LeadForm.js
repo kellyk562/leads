@@ -105,6 +105,29 @@ function LeadForm() {
     }
   };
 
+  const formatPhoneNumber = (value) => {
+    // Remove all non-digits
+    const digits = value.replace(/\D/g, '');
+
+    // Format as (XXX) XXX-XXXX
+    if (digits.length <= 3) {
+      return digits;
+    } else if (digits.length <= 6) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    } else {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    }
+  };
+
+  const handlePhoneChange = (e) => {
+    const { name, value } = e.target;
+    const formatted = formatPhoneNumber(value);
+    setFormData(prev => ({
+      ...prev,
+      [name]: formatted
+    }));
+  };
+
   const handleDayChange = (day) => {
     setFormData(prev => {
       const currentDays = Array.isArray(prev.callback_days) ? prev.callback_days : [];
@@ -249,7 +272,7 @@ function LeadForm() {
                   type="tel"
                   name="dispensary_number"
                   value={formData.dispensary_number}
-                  onChange={handleChange}
+                  onChange={handlePhoneChange}
                   placeholder="(555) 123-4567"
                 />
               </div>
@@ -286,18 +309,18 @@ function LeadForm() {
             <h3>Contact Information</h3>
             <div className="form-grid">
               <div className="form-group">
-                <label>Primary Contact Name</label>
+                <label>Initial Contact</label>
                 <input
                   type="text"
                   name="contact_name"
                   value={formData.contact_name}
                   onChange={handleChange}
-                  placeholder="John Doe"
+                  placeholder="Name"
                 />
               </div>
 
               <div className="form-group">
-                <label>Primary Contact Position</label>
+                <label>Initial Contact Role</label>
                 <select name="contact_position" value={formData.contact_position} onChange={handleChange}>
                   <option value="">Select position...</option>
                   <option value="Security">Security</option>
@@ -308,18 +331,18 @@ function LeadForm() {
               </div>
 
               <div className="form-group">
-                <label>Recommended Contact Name</label>
+                <label>Recommended Contact</label>
                 <input
                   type="text"
                   name="manager_name"
                   value={formData.manager_name}
                   onChange={handleChange}
-                  placeholder="Recommended contact name"
+                  placeholder="Name"
                 />
               </div>
 
               <div className="form-group">
-                <label>Recommended Contact Position</label>
+                <label>Recommended Contact Role</label>
                 <select name="owner_name" value={formData.owner_name} onChange={handleChange}>
                   <option value="">Select position...</option>
                   <option value="Manager">Manager</option>
@@ -333,7 +356,7 @@ function LeadForm() {
                   type="tel"
                   name="contact_number"
                   value={formData.contact_number}
-                  onChange={handleChange}
+                  onChange={handlePhoneChange}
                   placeholder="(555) 123-4567"
                 />
               </div>

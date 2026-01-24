@@ -26,6 +26,7 @@ function LeadDetail() {
   const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [historyForm, setHistoryForm] = useState({
     contact_method: 'Phone',
     contact_person: '',
@@ -60,6 +61,18 @@ function LeadDetail() {
     } catch (error) {
       console.error('Error deleting lead:', error);
       toast.error('Failed to delete lead');
+    }
+  };
+
+  const handlePriorityChange = async (newPriority) => {
+    try {
+      await leadsApi.update(id, { ...lead, priority: newPriority });
+      setLead(prev => ({ ...prev, priority: newPriority }));
+      setShowPriorityDropdown(false);
+      toast.success(`Priority updated to ${newPriority}`);
+    } catch (error) {
+      console.error('Error updating priority:', error);
+      toast.error('Failed to update priority');
     }
   };
 
@@ -124,6 +137,18 @@ function LeadDetail() {
     return 'Any time';
   };
 
+  const formatPhoneNumber = (value) => {
+    if (!value) return '';
+    const digits = value.replace(/\D/g, '');
+    if (digits.length <= 3) {
+      return digits;
+    } else if (digits.length <= 6) {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+    } else {
+      return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6, 10)}`;
+    }
+  };
+
   const getMethodIcon = (method) => {
     const icons = {
       'Phone': <FaPhone />,
@@ -163,29 +188,74 @@ function LeadDetail() {
       </div>
 
       <div className="lead-detail">
-        <div className="lead-detail-header">
-          <div className="lead-detail-title">
-            <h2>{lead.dispensary_name}</h2>
+        <div className="lead-detail-header" style={{ flexDirection: 'column', gap: '1rem' }}>
+          <div className="lead-detail-title" style={{ width: '100%' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <h2 style={{ margin: 0 }}>{lead.dispensary_name}</h2>
+              {lead.priority && (
+                <div style={{ position: 'relative' }}>
+                  <button
+                    className={`priority-badge priority-${lead.priority.toLowerCase()}`}
+                    onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
+                    style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}
+                  >
+                    <span className={`priority-badge priority-${lead.priority.toLowerCase()}`} style={{ cursor: 'pointer' }}>
+                      {lead.priority} ▼
+                    </span>
+                  </button>
+                  {showPriorityDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      right: 0,
+                      marginTop: '0.25rem',
+                      background: 'white',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      zIndex: 100,
+                      minWidth: '120px',
+                      overflow: 'hidden'
+                    }}>
+                      {['High', 'Medium', 'Low'].map(priority => (
+                        <button
+                          key={priority}
+                          onClick={() => handlePriorityChange(priority)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: '0.625rem 1rem',
+                            border: 'none',
+                            background: lead.priority === priority ? '#f0f0f0' : 'white',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontSize: '0.875rem',
+                            fontWeight: lead.priority === priority ? '600' : '400'
+                          }}
+                        >
+                          {priority}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
             {lead.address && (
-              <p style={{ color: '#6c757d', margin: '0.25rem 0 0.5rem', fontSize: '0.95rem' }}>
+              <p style={{ color: '#6c757d', margin: '0.25rem 0 0', fontSize: '0.95rem' }}>
                 <FaMapMarkerAlt size={12} style={{ marginRight: '0.5rem' }} />
                 {lead.address}
               </p>
             )}
-            {lead.priority && (
-              <span className={`priority-badge priority-${lead.priority.toLowerCase()}`}>
-                {lead.priority} Priority
-              </span>
-            )}
           </div>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
             <button
               className="btn btn-outline"
               onClick={() => setShowHistoryModal(true)}
+              style={{ flex: '1 1 auto' }}
             >
               <FaPlus /> Log Contact
             </button>
-            <Link to={`/${username}/leads/${id}/edit`} className="btn btn-primary">
+            <Link to={`/${username}/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
               <FaEdit /> Edit
             </Link>
             <button
@@ -227,7 +297,7 @@ function LeadDetail() {
             <h3><FaUser /> Contact Information</h3>
             <div className="detail-grid">
               <div className="detail-item">
-                <label>Primary Contact</label>
+                <label>Initial Contact</label>
                 <span>
                   {lead.contact_name || '-'}
                   {lead.contact_position && <span style={{ color: '#6c757d' }}> ({lead.contact_position})</span>}
@@ -246,7 +316,7 @@ function LeadDetail() {
                   {lead.dispensary_number ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <a href={`tel:${lead.dispensary_number}`} style={{ color: '#2d5a27' }}>
-                        <FaPhone size={12} /> {lead.dispensary_number}
+                        <FaPhone size={12} /> {formatPhoneNumber(lead.dispensary_number)}
                       </a>
                       <button
                         onClick={() => copyToClipboard(lead.dispensary_number)}
@@ -265,7 +335,7 @@ function LeadDetail() {
                   {lead.contact_number ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <a href={`tel:${lead.contact_number}`} style={{ color: '#2d5a27' }}>
-                        <FaPhone size={12} /> {lead.contact_number}
+                        <FaPhone size={12} /> {formatPhoneNumber(lead.contact_number)}
                       </a>
                       <button
                         onClick={() => copyToClipboard(lead.contact_number)}
