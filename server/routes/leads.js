@@ -12,14 +12,31 @@ const validateLead = [
   body('priority').optional().isIn(['Low', 'Medium', 'High']),
 ];
 
+// Get all users
+router.get('/users', async (req, res) => {
+  try {
+    const users = await db.all('SELECT * FROM users ORDER BY id');
+    res.json(users);
+  } catch (error) {
+    console.error('Error fetching users:', error);
+    res.status(500).json({ error: 'Failed to fetch users' });
+  }
+});
+
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, priority, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, priority, sort = 'updated_at', order = 'DESC', user_id } = req.query;
 
     let sql = 'SELECT * FROM leads WHERE 1=1';
     const params = [];
     let paramIndex = 1;
+
+    if (user_id) {
+      sql += ` AND user_id = $${paramIndex}`;
+      params.push(user_id);
+      paramIndex++;
+    }
 
     if (search) {
       sql += ` AND (dispensary_name ILIKE $${paramIndex} OR contact_name ILIKE $${paramIndex} OR manager_name ILIKE $${paramIndex} OR owner_name ILIKE $${paramIndex} OR address ILIKE $${paramIndex} OR city ILIKE $${paramIndex})`;
@@ -53,14 +70,22 @@ router.get('/callbacks/today', async (req, res) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     // Use day from query param (from client's local time) or fall back to server time
     const todayDay = req.query.day && days.includes(req.query.day) ? req.query.day : days[new Date().getDay()];
+    const { user_id } = req.query;
 
-    const sql = `
+    let sql = `
       SELECT * FROM leads
       WHERE callback_days ILIKE $1
-      ORDER BY priority DESC, dispensary_name ASC
     `;
+    const params = [`%${todayDay}%`];
 
-    const leads = await db.all(sql, [`%${todayDay}%`]);
+    if (user_id) {
+      sql += ` AND user_id = $2`;
+      params.push(user_id);
+    }
+
+    sql += ` ORDER BY priority DESC, dispensary_name ASC`;
+
+    const leads = await db.all(sql, params);
     res.json(leads);
   } catch (error) {
     console.error('Error fetching today callbacks:', error);
@@ -71,13 +96,22 @@ router.get('/callbacks/today', async (req, res) => {
 // Get all leads with callback days set (for upcoming section)
 router.get('/callbacks/upcoming', async (req, res) => {
   try {
-    const sql = `
+    const { user_id } = req.query;
+
+    let sql = `
       SELECT * FROM leads
       WHERE callback_days IS NOT NULL AND callback_days != '[]' AND callback_days != ''
-      ORDER BY priority DESC, dispensary_name ASC
     `;
+    const params = [];
 
-    const leads = await db.all(sql);
+    if (user_id) {
+      sql += ` AND user_id = $1`;
+      params.push(user_id);
+    }
+
+    sql += ` ORDER BY priority DESC, dispensary_name ASC`;
+
+    const leads = await db.all(sql, params);
     res.json(leads);
   } catch (error) {
     console.error('Error fetching upcoming callbacks:', error);
@@ -91,30 +125,38 @@ router.get('/stats', async (req, res) => {
     const stats = {};
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = days[new Date().getDay()];
+    const { user_id } = req.query;
+
+    // Build user filter clause
+    const userFilter = user_id ? ` AND user_id = $1` : '';
+    const userFilterWhere = user_id ? ` WHERE user_id = $1` : '';
+    const userParams = user_id ? [user_id] : [];
 
     // Total leads
-    const totalResult = await db.get('SELECT COUNT(*) as count FROM leads');
+    const totalResult = await db.get(`SELECT COUNT(*) as count FROM leads${userFilterWhere}`, userParams);
     stats.total = totalResult?.count || 0;
 
     // Today's callbacks count (leads scheduled for today's day of week)
+    const todayParams = user_id ? [`%${todayDay}%`, user_id] : [`%${todayDay}%`];
     const todayResult = await db.get(`
       SELECT COUNT(*) as count FROM leads
-      WHERE callback_days ILIKE $1
-    `, [`%${todayDay}%`]);
+      WHERE callback_days ILIKE $1${user_id ? ' AND user_id = $2' : ''}
+    `, todayParams);
     stats.todayCallbacks = todayResult?.count || 0;
 
     // Leads with callbacks scheduled
     const scheduledResult = await db.get(`
       SELECT COUNT(*) as count FROM leads
-      WHERE callback_days IS NOT NULL AND callback_days != '[]' AND callback_days != ''
-    `);
+      WHERE callback_days IS NOT NULL AND callback_days != '[]' AND callback_days != ''${userFilter}
+    `, userParams);
     stats.scheduledCallbacks = scheduledResult?.count || 0;
 
     // This week's new leads
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    const newParams = user_id ? [weekAgo, user_id] : [weekAgo];
     const newResult = await db.get(`
-      SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) >= DATE($1)
-    `, [weekAgo]);
+      SELECT COUNT(*) as count FROM leads WHERE DATE(created_at) >= DATE($1)${user_id ? ' AND user_id = $2' : ''}
+    `, newParams);
     stats.newThisWeek = newResult?.count || 0;
 
     res.json(stats);
@@ -180,7 +222,8 @@ router.post('/', validateLead, async (req, res) => {
       callback_time_from,
       callback_time_to,
       priority = 'Medium',
-      callback_date
+      callback_date,
+      user_id = 1
     } = req.body;
 
     // Convert arrays to JSON strings
@@ -192,8 +235,8 @@ router.post('/', validateLead, async (req, res) => {
         contact_date, dispensary_name, address, city, state, zip_code,
         dispensary_number, contact_name, contact_position, manager_name, owner_name,
         contact_number, contact_email, website, current_pos_system,
-        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, callback_date
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, callback_date, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       RETURNING id
     `;
 
@@ -201,7 +244,7 @@ router.post('/', validateLead, async (req, res) => {
       contact_date, dispensary_name, address, city, state, zip_code,
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
-      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, callback_date || null
+      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, callback_date || null, user_id
     ]);
 
     const newLead = await db.get('SELECT * FROM leads WHERE id = $1', [result.lastInsertRowid]);
@@ -388,7 +431,18 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
 // Export leads to CSV
 router.get('/export/csv', async (req, res) => {
   try {
-    const leads = await db.all('SELECT * FROM leads ORDER BY created_at DESC');
+    const { user_id } = req.query;
+    let sql = 'SELECT * FROM leads';
+    const params = [];
+
+    if (user_id) {
+      sql += ' WHERE user_id = $1';
+      params.push(user_id);
+    }
+
+    sql += ' ORDER BY created_at DESC';
+
+    const leads = await db.all(sql, params);
 
     // CSV headers
     const headers = [

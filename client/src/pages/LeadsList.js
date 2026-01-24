@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useParams } from 'react-router-dom';
 import { format, parseISO } from 'date-fns';
 import { toast } from 'react-toastify';
 import {
@@ -16,8 +16,13 @@ import {
   FaDownload
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
+import { useUsers } from '../contexts/UserContext';
 
 function LeadsList() {
+  const { username } = useParams();
+  const { getUserIdByName } = useUsers();
+  const userId = getUserIdByName(username);
+
   const [searchParams, setSearchParams] = useSearchParams();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -37,7 +42,7 @@ function LeadsList() {
       if (search) params.search = search;
       if (priorityFilter) params.priority = priorityFilter;
 
-      const response = await leadsApi.getAll(params);
+      const response = await leadsApi.getAll(params, userId);
       setLeads(response.data);
     } catch (error) {
       console.error('Error fetching leads:', error);
@@ -45,7 +50,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, priorityFilter, sortBy, sortOrder]);
+  }, [search, priorityFilter, sortBy, sortOrder, userId]);
 
   useEffect(() => {
     fetchLeads();
@@ -73,7 +78,7 @@ function LeadsList() {
   const handleExport = () => {
     const baseUrl = process.env.REACT_APP_API_URL ||
       (window.location.port === '3000' ? 'http://localhost:5001/api' : '/api');
-    window.location.href = `${baseUrl}/leads/export/csv`;
+    window.location.href = `${baseUrl}/leads/export/csv?user_id=${userId}`;
   };
 
   const formatDate = (dateString) => {
@@ -132,7 +137,7 @@ function LeadsList() {
             <button onClick={handleExport} className="btn btn-outline">
               <FaDownload /> Export
             </button>
-            <Link to="/leads/new" className="btn btn-primary">
+            <Link to={`/${username}/leads/new`} className="btn btn-primary">
               <FaPlus /> Add New Lead
             </Link>
           </div>
@@ -202,7 +207,7 @@ function LeadsList() {
                 : 'Get started by adding your first sales lead'}
             </p>
             {!search && (
-              <Link to="/leads/new" className="btn btn-primary">
+              <Link to={`/${username}/leads/new`} className="btn btn-primary">
                 <FaPlus /> Add First Lead
               </Link>
             )}
@@ -230,7 +235,7 @@ function LeadsList() {
                 {leads.map((lead) => (
                   <tr key={lead.id}>
                     <td>
-                      <Link to={`/leads/${lead.id}`} style={{ fontWeight: 600, color: getPriorityColor(lead.priority) }}>
+                      <Link to={`/${username}/leads/${lead.id}`} style={{ fontWeight: 600, color: getPriorityColor(lead.priority) }}>
                         {lead.dispensary_name}
                       </Link>
                       <span className={`priority-badge priority-${lead.priority?.toLowerCase()}`} style={{ marginLeft: '0.5rem' }}>
@@ -278,14 +283,14 @@ function LeadsList() {
                     <td>
                       <div className="action-buttons">
                         <Link
-                          to={`/leads/${lead.id}`}
+                          to={`/${username}/leads/${lead.id}`}
                           className="btn btn-sm btn-outline btn-icon"
                           title="View"
                         >
                           <FaEye />
                         </Link>
                         <Link
-                          to={`/leads/${lead.id}/edit`}
+                          to={`/${username}/leads/${lead.id}/edit`}
                           className="btn btn-sm btn-outline btn-icon"
                           title="Edit"
                         >

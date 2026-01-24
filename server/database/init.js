@@ -24,6 +24,21 @@ async function initDatabase() {
   console.log('Connected to PostgreSQL successfully');
 
   try {
+    // Create users table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Seed Ken and Jack users
+    await client.query(`
+      INSERT INTO users (id, name) VALUES (1, 'ken'), (2, 'jack')
+      ON CONFLICT (name) DO NOTHING
+    `);
+
     // Create leads table
     await client.query(`
       CREATE TABLE IF NOT EXISTS leads (
@@ -54,9 +69,23 @@ async function initDatabase() {
         priority TEXT DEFAULT 'Medium' CHECK(priority IN ('Low', 'Medium', 'High')),
         callback_date DATE,
         source TEXT,
+        user_id INTEGER REFERENCES users(id) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add user_id column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'user_id'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN user_id INTEGER REFERENCES users(id) DEFAULT 1;
+        END IF;
+      END $$;
     `);
 
     // Create contact_history table
@@ -76,6 +105,7 @@ async function initDatabase() {
 
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_user_id ON leads(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_lead_contact_history ON contact_history(lead_id)`);
 
     console.log('Database initialized successfully');
