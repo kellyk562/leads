@@ -129,12 +129,23 @@ function LeadDetail() {
     }
   };
 
+  const formatTimeSlots = (timeSlots) => {
+    if (!timeSlots) return null;
+    try {
+      const slotsArray = typeof timeSlots === 'string' ? JSON.parse(timeSlots) : timeSlots;
+      if (!Array.isArray(slotsArray) || slotsArray.length === 0) return null;
+      return slotsArray.join(', ');
+    } catch {
+      return null;
+    }
+  };
+
   const formatTimeRange = (from, to) => {
-    if (!from && !to) return 'Any time';
+    if (!from && !to) return null;
     if (from && to) return `${from} - ${to}`;
     if (from) return `From ${from}`;
     if (to) return `Until ${to}`;
-    return 'Any time';
+    return null;
   };
 
   const formatPhoneNumber = (value) => {
@@ -269,7 +280,7 @@ function LeadDetail() {
 
         <div className="lead-detail-body">
           {/* Callback Info Alert */}
-          {lead.callback_days && lead.callback_days !== '[]' && (
+          {(lead.callback_days && lead.callback_days !== '[]' || formatTimeSlots(lead.callback_time_slots) || lead.callback_time_from || lead.callback_time_to) && (
             <div
               style={{
                 background: '#e8f5e9',
@@ -284,8 +295,13 @@ function LeadDetail() {
                 <strong>Callback Schedule</strong>
               </div>
               <div style={{ marginLeft: '1.75rem' }}>
-                <div><strong>Days:</strong> {formatCallbackDays(lead.callback_days)}</div>
-                {(lead.callback_time_from || lead.callback_time_to) && (
+                {lead.callback_days && lead.callback_days !== '[]' && (
+                  <div><strong>Days:</strong> {formatCallbackDays(lead.callback_days)}</div>
+                )}
+                {formatTimeSlots(lead.callback_time_slots) && (
+                  <div><strong>Best Time:</strong> {formatTimeSlots(lead.callback_time_slots)}</div>
+                )}
+                {formatTimeRange(lead.callback_time_from, lead.callback_time_to) && (
                   <div><strong>Time:</strong> {formatTimeRange(lead.callback_time_from, lead.callback_time_to)}</div>
                 )}
               </div>
