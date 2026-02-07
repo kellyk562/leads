@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaSave, FaTimes, FaArrowLeft } from 'react-icons/fa';
@@ -49,6 +49,56 @@ function LeadForm() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(isEditing);
   const [errors, setErrors] = useState({});
+  const addressInputRef = useRef(null);
+
+  // Google Places Autocomplete for the Location field
+  useEffect(() => {
+    const apiKey = process.env.REACT_APP_GOOGLE_MAPS_API_KEY;
+    if (!apiKey) return;
+
+    let autocomplete;
+
+    function initAutocomplete() {
+      if (!addressInputRef.current || !window.google?.maps?.places) return;
+      autocomplete = new window.google.maps.places.Autocomplete(addressInputRef.current, {
+        types: ['address'],
+        componentRestrictions: { country: 'us' },
+        fields: ['formatted_address'],
+      });
+      autocomplete.addListener('place_changed', () => {
+        const place = autocomplete.getPlace();
+        if (place.formatted_address) {
+          setFormData(prev => ({ ...prev, address: place.formatted_address }));
+        }
+      });
+    }
+
+    if (window.google?.maps?.places) {
+      initAutocomplete();
+    } else if (!document.querySelector('script[src*="maps.googleapis.com/maps/api/js"]')) {
+      const script = document.createElement('script');
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places`;
+      script.async = true;
+      script.defer = true;
+      script.onload = initAutocomplete;
+      document.head.appendChild(script);
+    } else {
+      // Script is loading but not ready yet — poll for it
+      const interval = setInterval(() => {
+        if (window.google?.maps?.places) {
+          clearInterval(interval);
+          initAutocomplete();
+        }
+      }, 100);
+      return () => clearInterval(interval);
+    }
+
+    return () => {
+      if (autocomplete) {
+        window.google?.maps?.event?.clearInstanceListeners(autocomplete);
+      }
+    };
+  }, []);
 
   const fetchLead = useCallback(async () => {
     try {
@@ -245,6 +295,7 @@ function LeadForm() {
               <div className="form-group">
                 <label>Location</label>
                 <input
+                  ref={addressInputRef}
                   type="text"
                   name="address"
                   value={formData.address}

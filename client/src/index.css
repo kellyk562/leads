@@ -931,3 +931,8 @@ body {
   padding-top: 0.75rem;
   border-top: 1px solid var(--border-color);
 }
+
+/* Google Places Autocomplete dropdown */
+.pac-container {
+  z-index: 10000 !important;
+}
