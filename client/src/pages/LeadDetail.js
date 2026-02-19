@@ -280,7 +280,7 @@ function LeadDetail() {
 
         <div className="lead-detail-body">
           {/* Callback Info Alert */}
-          {(lead.callback_days && lead.callback_days !== '[]' || formatTimeSlots(lead.callback_time_slots) || lead.callback_time_from || lead.callback_time_to) && (
+          {((lead.callback_days && lead.callback_days !== '[]') || formatTimeSlots(lead.callback_time_slots) || lead.callback_time_from || lead.callback_time_to) && (
             <div
               style={{
                 background: '#e8f5e9',
