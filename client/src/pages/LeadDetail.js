@@ -1101,7 +1101,7 @@ function LeadDetail() {
                       background: '#f8d7da', border: '1px solid #dc3545', borderRadius: '8px',
                       padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.875rem', color: '#721c24'
                     }}>
-                      Gmail SMTP is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your .env file to send emails directly.
+                      Email sending is not configured. Contact your admin to set up the RESEND_API_KEY.
                     </div>
                   )}
                   <div className="form-group" style={{ marginBottom: '1rem' }}>

@@ -5,25 +5,25 @@ const emailService = require('../services/emailService');
 
 const router = express.Router();
 
-// GET /api/email/status — check if Gmail SMTP is configured
+// GET /api/email/status — check if email sending is configured
 router.get('/status', (req, res) => {
   const configured = emailService.isConfigured();
   res.json({
     configured,
-    user: configured ? process.env.GMAIL_USER : null,
+    user: configured ? (process.env.EMAIL_FROM || 'Resend configured') : null,
   });
 });
 
-// POST /api/email/test — verify SMTP connection works
+// POST /api/email/test — verify email connection works
 router.post('/test', async (req, res) => {
   if (!emailService.isConfigured()) {
-    return res.status(503).json({ ok: false, error: 'Gmail SMTP is not configured' });
+    return res.status(503).json({ ok: false, error: 'Email is not configured' });
   }
   try {
     await emailService.verifyConnection();
     res.json({ ok: true });
   } catch (error) {
-    console.error('SMTP verification failed:', error);
+    console.error('Email verification failed:', error);
     res.status(500).json({ ok: false, error: error.message });
   }
 });
@@ -37,7 +37,7 @@ router.post('/send', [
 ], async (req, res) => {
   try {
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ error: 'Gmail SMTP is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env' });
+      return res.status(503).json({ error: 'Email is not configured. Add RESEND_API_KEY to your environment variables.' });
     }
 
     const errors = validationResult(req);
@@ -57,8 +57,8 @@ router.post('/send', [
 
     // Auto-log to contact history
     const outcome = templateName
-      ? `Email sent via Gmail (template: ${templateName})`
-      : 'Email sent via Gmail';
+      ? `Email sent (template: ${templateName})`
+      : 'Email sent';
 
     const historyResult = await db.run(`
       INSERT INTO contact_history (lead_id, contact_method, notes, outcome, email_subject, email_template_id)
@@ -84,9 +84,6 @@ router.post('/send', [
     });
   } catch (error) {
     console.error('Email send failed:', error);
-    if (error.code === 'EAUTH') {
-      return res.status(401).json({ error: 'Gmail authentication failed. Check your App Password.' });
-    }
     res.status(500).json({ error: `Failed to send email: ${error.message}` });
   }
 });

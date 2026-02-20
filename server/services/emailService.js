@@ -1,52 +1,40 @@
-const nodemailer = require('nodemailer');
-const dns = require('dns');
+const { Resend } = require('resend');
 
-// Force IPv4 DNS resolution — Railway doesn't support IPv6 outbound
-dns.setDefaultResultOrder('ipv4first');
-
-let transporter = null;
+let resend = null;
 
 function isConfigured() {
-  return !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  return !!process.env.RESEND_API_KEY;
 }
 
-function getTransporter() {
-  if (!transporter) {
+function getClient() {
+  if (!resend) {
     if (!isConfigured()) {
-      throw new Error('Gmail SMTP is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env');
+      throw new Error('Resend is not configured. Set RESEND_API_KEY in .env');
     }
-    transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      family: 4,
-      auth: {
-        user: process.env.GMAIL_USER,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
-    });
+    resend = new Resend(process.env.RESEND_API_KEY);
   }
-  return transporter;
+  return resend;
 }
 
 async function verifyConnection() {
-  const t = getTransporter();
-  await t.verify();
+  const client = getClient();
+  await client.apiKeys.list();
   return true;
 }
 
 async function sendEmail({ to, subject, text }) {
-  const t = getTransporter();
-  const info = await t.sendMail({
-    from: `"Ken" <${process.env.GMAIL_USER}>`,
+  const client = getClient();
+  const fromAddress = process.env.EMAIL_FROM || 'Ken <onboarding@resend.dev>';
+  const { data, error } = await client.emails.send({
+    from: fromAddress,
     to,
     subject,
     text,
   });
-  return info;
+  if (error) {
+    throw new Error(error.message);
+  }
+  return { messageId: data.id };
 }
 
 module.exports = { isConfigured, verifyConnection, sendEmail };
