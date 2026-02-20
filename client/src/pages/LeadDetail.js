@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, isPast, isToday } from 'date-fns';
 import { toast } from 'react-toastify';
 import {
   FaArrowLeft,
@@ -14,10 +14,16 @@ import {
   FaHistory,
   FaComments,
   FaUser,
-  FaCopy
+  FaCopy,
+  FaCheck
 } from 'react-icons/fa';
-import { leadsApi } from '../services/api';
+import { leadsApi, tasksApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+
+const formatCurrency = (value) => {
+  if (!value && value !== 0) return null;
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+};
 
 function LeadDetail() {
   const { id } = useParams();
@@ -27,8 +33,17 @@ function LeadDetail() {
   const [loading, setLoading] = useState(true);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [tasks, setTasks] = useState([]);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [showStageDropdown, setShowStageDropdown] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    title: '',
+    description: '',
+    due_date: new Date().toISOString().split('T')[0],
+    due_time: '',
+    priority: 'Medium'
+  });
   const [historyForm, setHistoryForm] = useState({
     contact_method: 'Phone',
     contact_person: '',
@@ -51,9 +66,19 @@ function LeadDetail() {
     }
   }, [id, navigate]);
 
+  const fetchTasks = useCallback(async () => {
+    try {
+      const response = await tasksApi.getAll({ lead_id: id });
+      setTasks(response.data);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchLead();
-  }, [fetchLead]);
+    fetchTasks();
+  }, [fetchLead, fetchTasks]);
 
   const handleDelete = async () => {
     try {
@@ -120,6 +145,44 @@ function LeadDetail() {
       toast.error('Failed to add contact history');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleAddTask = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await tasksApi.create({ ...taskForm, lead_id: parseInt(id) });
+      toast.success('Task added');
+      setShowTaskModal(false);
+      setTaskForm({ title: '', description: '', due_date: new Date().toISOString().split('T')[0], due_time: '', priority: 'Medium' });
+      fetchTasks();
+    } catch (error) {
+      console.error('Error adding task:', error);
+      toast.error('Failed to add task');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleToggleTask = async (taskId) => {
+    try {
+      await tasksApi.toggleComplete(taskId);
+      fetchTasks();
+    } catch (error) {
+      console.error('Error toggling task:', error);
+      toast.error('Failed to update task');
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await tasksApi.delete(taskId);
+      toast.success('Task deleted');
+      fetchTasks();
+    } catch (error) {
+      console.error('Error deleting task:', error);
+      toast.error('Failed to delete task');
     }
   };
 
@@ -324,6 +387,11 @@ function LeadDetail() {
                 {lead.address}
               </p>
             )}
+            {lead.deal_value && (
+              <p style={{ color: '#2e7d32', fontWeight: 700, margin: '0.25rem 0 0', fontSize: '1.1rem' }}>
+                {formatCurrency(lead.deal_value)}/mo
+              </p>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
             <button
@@ -463,6 +531,59 @@ function LeadDetail() {
             </div>
           )}
 
+          {/* Tasks */}
+          <div className="detail-section">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', paddingBottom: '0.5rem', borderBottom: '1px solid var(--border-color)' }}>
+              <h3 style={{ margin: 0, border: 'none', paddingBottom: 0 }}><FaCheck /> Tasks</h3>
+              <button className="btn btn-sm btn-outline" onClick={() => setShowTaskModal(true)}>
+                <FaPlus /> Add Task
+              </button>
+            </div>
+            {tasks.length > 0 ? (
+              <div className="task-list">
+                {tasks.map(task => {
+                  const taskDate = task.due_date ? new Date(task.due_date + 'T00:00:00') : null;
+                  const overdue = task.status === 'pending' && taskDate && isPast(taskDate) && !isToday(taskDate);
+                  return (
+                    <div key={task.id} className="task-item" style={{ borderLeftColor: overdue ? '#dc3545' : task.status === 'completed' ? '#28a745' : '#f5a623' }}>
+                      <input
+                        type="checkbox"
+                        className="task-checkbox"
+                        checked={task.status === 'completed'}
+                        onChange={() => handleToggleTask(task.id)}
+                      />
+                      <div className="task-content">
+                        <span className="task-title" style={{ textDecoration: task.status === 'completed' ? 'line-through' : 'none', color: task.status === 'completed' ? '#6c757d' : 'inherit' }}>
+                          {task.title}
+                        </span>
+                        <div className="task-meta">
+                          <span style={{ color: overdue ? '#dc3545' : '#6c757d' }}>
+                            {task.due_date ? format(new Date(task.due_date + 'T00:00:00'), 'MMM d, yyyy') : ''}
+                            {task.due_time ? ` at ${task.due_time}` : ''}
+                          </span>
+                          <span className={`priority-badge priority-${task.priority?.toLowerCase()}`} style={{ fontSize: '0.625rem', padding: '0.125rem 0.5rem' }}>
+                            {task.priority}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteTask(task.id)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc3545', padding: '0.25rem', flexShrink: 0 }}
+                        title="Delete task"
+                      >
+                        <FaTrash size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p style={{ color: '#6c757d', fontStyle: 'italic' }}>
+                No tasks yet. Click "Add Task" to create one.
+              </p>
+            )}
+          </div>
+
           {/* Contact History */}
           <div className="detail-section">
             <h3><FaHistory /> Contact History</h3>
@@ -537,6 +658,85 @@ function LeadDetail() {
                 Delete Lead
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Task Modal */}
+      {showTaskModal && (
+        <div className="modal-overlay" onClick={() => setShowTaskModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Add Task</h3>
+              <button className="modal-close" onClick={() => setShowTaskModal(false)}>
+                &times;
+              </button>
+            </div>
+            <form onSubmit={handleAddTask}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label>Title <span className="required">*</span></label>
+                  <input
+                    type="text"
+                    value={taskForm.title}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="What needs to be done?"
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label>Description</label>
+                  <textarea
+                    value={taskForm.description}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="Additional details..."
+                    rows="2"
+                  />
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label>Due Date <span className="required">*</span></label>
+                    <input
+                      type="date"
+                      value={taskForm.due_date}
+                      onChange={(e) => setTaskForm(prev => ({ ...prev, due_date: e.target.value }))}
+                      required
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>Due Time</label>
+                    <input
+                      type="time"
+                      value={taskForm.due_time}
+                      onChange={(e) => setTaskForm(prev => ({ ...prev, due_time: e.target.value }))}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label>Priority</label>
+                  <select
+                    value={taskForm.priority}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                  </select>
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-outline" onClick={() => setShowTaskModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={submitting}>
+                  {submitting ? 'Saving...' : 'Add Task'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -13,6 +13,7 @@ const validateLead = [
   body('contact_email').optional({ values: 'falsy' }).isEmail().withMessage('Invalid email format'),
   body('priority').optional().isIn(['Low', 'Medium', 'High']),
   body('stage').optional().isIn(VALID_STAGES),
+  body('deal_value').optional({ values: 'falsy' }).isNumeric(),
 ];
 
 // Get all leads with optional filtering
@@ -42,7 +43,7 @@ router.get('/', async (req, res) => {
       paramIndex++;
     }
 
-    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority', 'stage'];
+    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority', 'stage', 'deal_value'];
     const sortColumn = validSortColumns.includes(sort) ? sort : 'updated_at';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -133,6 +134,22 @@ router.get('/stats', async (req, res) => {
       stats.stageCounts[row.stage || 'New Lead'] = parseInt(row.count, 10);
     }
 
+    // Total pipeline value (exclude closed stages)
+    const pipelineValueResult = await db.get(`
+      SELECT COALESCE(SUM(deal_value), 0) as total FROM leads
+      WHERE stage NOT IN ('Closed Won', 'Closed Lost')
+    `);
+    stats.totalPipelineValue = parseFloat(pipelineValueResult?.total || 0);
+
+    // Value per stage
+    const stageValueRows = await db.all(`
+      SELECT stage, COALESCE(SUM(deal_value), 0) as total FROM leads GROUP BY stage
+    `);
+    stats.stageValues = {};
+    for (const row of stageValueRows) {
+      stats.stageValues[row.stage || 'New Lead'] = parseFloat(row.total);
+    }
+
     res.json(stats);
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -197,7 +214,8 @@ router.post('/', validateLead, async (req, res) => {
       callback_time_to,
       priority = 'Medium',
       stage = 'New Lead',
-      callback_date
+      callback_date,
+      deal_value
     } = req.body;
 
     // Convert arrays to JSON strings
@@ -209,8 +227,8 @@ router.post('/', validateLead, async (req, res) => {
         contact_date, dispensary_name, address, city, state, zip_code,
         dispensary_number, contact_name, contact_position, manager_name, owner_name,
         contact_number, contact_email, website, current_pos_system,
-        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, stage, callback_date, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, stage, callback_date, deal_value, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
       RETURNING id
     `;
 
@@ -218,7 +236,7 @@ router.post('/', validateLead, async (req, res) => {
       contact_date, dispensary_name, address, city, state, zip_code,
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
-      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, stage, callback_date || null, 1
+      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, stage, callback_date || null, deal_value || null, 1
     ]);
 
     const newLead = await db.get('SELECT * FROM leads WHERE id = $1', [result.lastInsertRowid]);
@@ -265,7 +283,8 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
       callback_time_to,
       priority,
       stage,
-      callback_date
+      callback_date,
+      deal_value
     } = req.body;
 
     // Convert arrays to JSON strings
@@ -297,8 +316,9 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
         priority = $21,
         stage = $22,
         callback_date = $23,
+        deal_value = $24,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $24
+      WHERE id = $25
     `;
 
     await db.run(sql, [
@@ -308,6 +328,7 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
       notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority,
       stage || existing.stage || 'New Lead',
       callback_date || null,
+      deal_value || null,
       req.params.id
     ]);
 
@@ -429,7 +450,8 @@ router.delete('/:id', param('id').isInt(), async (req, res) => {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    // Delete contact history first (cascade should handle this but being explicit)
+    // Delete related records first (cascade should handle this but being explicit)
+    await db.run('DELETE FROM tasks WHERE lead_id = $1', [req.params.id]);
     await db.run('DELETE FROM contact_history WHERE lead_id = $1', [req.params.id]);
     await db.run('DELETE FROM leads WHERE id = $1', [req.params.id]);
 
@@ -451,7 +473,7 @@ router.get('/export/csv', async (req, res) => {
       'ID', 'Contact Date', 'Dispensary Name', 'Address', 'City', 'State', 'Zip Code',
       'Dispensary Phone', 'Primary Contact', 'Contact Position', 'Recommended Contact',
       'Recommended Position', 'Recommended Phone', 'Recommended Email', 'Website',
-      'Current POS', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
+      'Current POS', 'Deal Value', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
       'Priority', 'Stage', 'Callback Date', 'Created At', 'Updated At'
     ];
 
@@ -473,6 +495,7 @@ router.get('/export/csv', async (req, res) => {
       lead.contact_email || '',
       lead.website || '',
       lead.current_pos_system || '',
+      lead.deal_value || '',
       `"${(lead.notes || '').replace(/"/g, '""').replace(/\n/g, ' ')}"`,
       `"${(lead.callback_days || '').replace(/"/g, '""')}"`,
       lead.callback_time_from || '',

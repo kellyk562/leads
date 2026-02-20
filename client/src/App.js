@@ -9,6 +9,7 @@ import LeadsList from './pages/LeadsList';
 import LeadForm from './pages/LeadForm';
 import LeadDetail from './pages/LeadDetail';
 import Pipeline from './pages/Pipeline';
+import Tasks from './pages/Tasks';
 
 function AppHeader() {
   return (
@@ -21,6 +22,7 @@ function AppHeader() {
         <nav className="nav-links">
           <NavLink to="/leads">All</NavLink>
           <NavLink to="/pipeline">Pipeline</NavLink>
+          <NavLink to="/tasks">Tasks</NavLink>
           <NavLink to="/leads/new" className="add-lead-btn" title="Add Lead">
             <FaPlus />
           </NavLink>
@@ -40,6 +42,7 @@ function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/leads" element={<LeadsList />} />
             <Route path="/pipeline" element={<Pipeline />} />
+            <Route path="/tasks" element={<Tasks />} />
             <Route path="/leads/new" element={<LeadForm />} />
             <Route path="/leads/:id" element={<LeadDetail />} />
             <Route path="/leads/:id/edit" element={<LeadForm />} />

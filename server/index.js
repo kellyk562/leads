@@ -27,7 +27,9 @@ async function startServer() {
 
     // API Routes (loaded after database is initialized)
     const leadsRoutes = require('./routes/leads');
+    const tasksRoutes = require('./routes/tasks');
     app.use('/api/leads', leadsRoutes);
+    app.use('/api/tasks', tasksRoutes);
 
     // Serve static files from React app in production
     if (process.env.NODE_ENV === 'production') {

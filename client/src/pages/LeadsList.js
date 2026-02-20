@@ -109,6 +109,11 @@ function LeadsList() {
     return '';
   };
 
+  const formatCurrency = (value) => {
+    if (!value && value !== 0) return '-';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
+  };
+
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'High': return '#7b1fa2';
@@ -198,6 +203,7 @@ function LeadsList() {
             <option value="dispensary_name-ASC">Name A-Z</option>
             <option value="dispensary_name-DESC">Name Z-A</option>
             <option value="priority-DESC">Priority (High to Low)</option>
+            <option value="deal_value-DESC">Highest Value</option>
           </select>
         </div>
 
@@ -233,6 +239,7 @@ function LeadsList() {
                   <th>Stage</th>
                   <th>Recommended Contact</th>
                   <th>Location</th>
+                  <th>Deal Value</th>
                   <th>
                     Callback Days
                   </th>
@@ -290,6 +297,9 @@ function LeadsList() {
                           <FaMapMarkerAlt size={10} /> {lead.address}
                         </div>
                       )}
+                    </td>
+                    <td style={{ fontSize: '0.875rem', fontWeight: lead.deal_value ? 600 : 400, color: lead.deal_value ? '#2e7d32' : '#6c757d' }}>
+                      {lead.deal_value ? `${formatCurrency(lead.deal_value)}/mo` : '-'}
                     </td>
                     <td style={{ fontSize: '0.875rem' }}>
                       <div>{formatCallbackDays(lead.callback_days)}</div>

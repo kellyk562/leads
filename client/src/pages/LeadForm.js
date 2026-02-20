@@ -28,7 +28,8 @@ const initialFormState = {
   callback_time_to: '',
   priority: 'Medium',
   stage: 'New Lead',
-  callback_date: ''
+  callback_date: '',
+  deal_value: ''
 };
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -350,6 +351,23 @@ function LeadForm() {
                   <option value="Weave">Weave</option>
                   <option value="N/A">N/A</option>
                 </select>
+              </div>
+
+              <div className="form-group">
+                <label>Monthly Value</label>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: '#6c757d', fontWeight: 500 }}>$</span>
+                  <input
+                    type="number"
+                    name="deal_value"
+                    value={formData.deal_value}
+                    onChange={handleChange}
+                    placeholder="500"
+                    step="0.01"
+                    min="0"
+                    style={{ paddingLeft: '1.5rem' }}
+                  />
+                </div>
               </div>
             </div>
           </div>

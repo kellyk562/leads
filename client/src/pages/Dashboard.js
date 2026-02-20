@@ -1,19 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { format } from 'date-fns';
+import { toast } from 'react-toastify';
 import {
   FaPhoneAlt,
   FaCalendarAlt,
   FaClock,
   FaArrowRight,
-  FaUserPlus
+  FaUserPlus,
+  FaTasks,
+  FaExclamationTriangle
 } from 'react-icons/fa';
-import { leadsApi } from '../services/api';
+import { leadsApi, tasksApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+
+const formatCurrency = (value) => {
+  if (!value && value !== 0) return '$0';
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+};
 
 function Dashboard() {
   const [todayCallbacks, setTodayCallbacks] = useState([]);
   const [allLeads, setAllLeads] = useState([]);
   const [stats, setStats] = useState(null);
+  const [dashboardTasks, setDashboardTasks] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -22,14 +32,20 @@ function Dashboard() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const [todayRes, leadsRes, statsRes] = await Promise.all([
+      const [todayRes, leadsRes, statsRes, overdueTasksRes, todayTasksRes] = await Promise.all([
         leadsApi.getTodayCallbacks(),
         leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' }),
-        leadsApi.getStats()
+        leadsApi.getStats(),
+        tasksApi.getAll({ period: 'overdue' }),
+        tasksApi.getAll({ period: 'today' })
       ]);
       setTodayCallbacks(todayRes.data);
       setAllLeads(leadsRes.data.slice(0, 5)); // Get 5 most recent leads
       setStats(statsRes.data);
+      setDashboardTasks([
+        ...overdueTasksRes.data.map(t => ({ ...t, _isOverdue: true })),
+        ...todayTasksRes.data
+      ]);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -40,6 +56,16 @@ function Dashboard() {
   useEffect(() => {
     fetchDashboardData();
   }, [fetchDashboardData]);
+
+  const handleToggleTask = async (taskId) => {
+    try {
+      await tasksApi.toggleComplete(taskId);
+      fetchDashboardData();
+    } catch (error) {
+      console.error('Error toggling task:', error);
+      toast.error('Failed to update task');
+    }
+  };
 
   const formatCallbackDays = (callbackDays) => {
     if (!callbackDays) return 'Not set';
@@ -114,6 +140,50 @@ function Dashboard() {
         )}
       </div>
 
+      {/* Tasks Section */}
+      {dashboardTasks.length > 0 && (
+        <div className="callbacks-section">
+          <h2>
+            <FaTasks />
+            Tasks ({dashboardTasks.length})
+          </h2>
+          <div className="task-list">
+            {dashboardTasks.map(task => (
+              <div
+                key={task.id}
+                className="task-item"
+                style={{ borderLeftColor: task._isOverdue ? '#dc3545' : '#f5a623' }}
+              >
+                <input
+                  type="checkbox"
+                  className="task-checkbox"
+                  checked={false}
+                  onChange={() => handleToggleTask(task.id)}
+                />
+                <div className="task-content">
+                  <span className="task-title">{task.title}</span>
+                  <div className="task-meta">
+                    <Link to={`/leads/${task.lead_id}`} style={{ color: '#2d5a27', textDecoration: 'none', fontSize: '0.8125rem' }}>
+                      {task.dispensary_name}
+                    </Link>
+                    <span style={{ color: task._isOverdue ? '#dc3545' : '#6c757d', fontSize: '0.8125rem' }}>
+                      {task._isOverdue && <FaExclamationTriangle size={10} style={{ marginRight: '0.25rem' }} />}
+                      {task.due_date ? format(new Date(task.due_date + 'T00:00:00'), 'MMM d') : ''}
+                      {task.due_time ? ` at ${task.due_time}` : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+            <Link to="/tasks" className="btn btn-outline">
+              View All Tasks <FaArrowRight />
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Recent Leads Section */}
       {allLeads.length > 0 && (
         <div className="callbacks-section">
@@ -173,9 +243,30 @@ function Dashboard() {
                 <div className="pipeline-summary-label" style={{ color: STAGE_COLORS[stage] }}>
                   {stage}
                 </div>
+                {stats.stageValues?.[stage] > 0 && (
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2e7d32', marginTop: '0.25rem' }}>
+                    {formatCurrency(stats.stageValues[stage])}
+                  </div>
+                )}
               </div>
             ))}
           </div>
+          {stats.totalPipelineValue > 0 && (
+            <div style={{
+              marginTop: '1rem',
+              padding: '0.75rem 1rem',
+              background: '#e8f5e9',
+              borderRadius: '8px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontWeight: 600, color: '#2d5a27' }}>Total Pipeline Value</span>
+              <span style={{ fontWeight: 700, fontSize: '1.25rem', color: '#2e7d32' }}>
+                {formatCurrency(stats.totalPipelineValue)}
+              </span>
+            </div>
+          )}
           <div style={{ textAlign: 'center', marginTop: '1rem' }}>
             <Link to="/pipeline" className="btn btn-outline">
               View Pipeline <FaArrowRight />

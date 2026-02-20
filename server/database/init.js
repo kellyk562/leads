@@ -68,6 +68,7 @@ async function initDatabase() {
         callback_time_to TEXT,
         priority TEXT DEFAULT 'Medium' CHECK(priority IN ('Low', 'Medium', 'High')),
         stage TEXT DEFAULT 'New Lead' CHECK(stage IN ('New Lead', 'Contacted', 'Demo Scheduled', 'Demo Completed', 'Proposal Sent', 'Negotiating', 'Closed Won', 'Closed Lost')),
+        deal_value NUMERIC(12,2),
         callback_date DATE,
         source TEXT,
         user_id INTEGER REFERENCES users(id) DEFAULT 1,
@@ -103,6 +104,36 @@ async function initDatabase() {
     `);
     await client.query(`UPDATE leads SET stage = 'New Lead' WHERE stage IS NULL`);
 
+    // Add deal_value column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'deal_value'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN deal_value NUMERIC(12,2);
+        END IF;
+      END $$;
+    `);
+
+    // Create tasks table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        description TEXT,
+        due_date DATE NOT NULL,
+        due_time TIME,
+        priority TEXT DEFAULT 'Medium' CHECK(priority IN ('Low', 'Medium', 'High')),
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed')),
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     // Create contact_history table
     await client.query(`
       CREATE TABLE IF NOT EXISTS contact_history (
@@ -123,6 +154,9 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_user_id ON leads(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_lead_contact_history ON contact_history(lead_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_lead_id ON tasks(lead_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
 
     console.log('Database initialized successfully');
   } finally {

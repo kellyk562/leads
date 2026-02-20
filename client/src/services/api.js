@@ -49,4 +49,15 @@ export const leadsApi = {
   getHistory: (leadId) => api.get(`/leads/${leadId}/history`),
 };
 
+// Tasks API
+export const tasksApi = {
+  getAll: (params = {}) => api.get('/tasks', { params }),
+  getById: (id) => api.get(`/tasks/${id}`),
+  getStats: () => api.get('/tasks/stats'),
+  create: (data) => api.post('/tasks', data),
+  update: (id, data) => api.put(`/tasks/${id}`, data),
+  toggleComplete: (id) => api.patch(`/tasks/${id}/complete`),
+  delete: (id) => api.delete(`/tasks/${id}`),
+};
+
 export default api;

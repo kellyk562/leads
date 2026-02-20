@@ -25,6 +25,11 @@ function Pipeline() {
     fetchLeads();
   }, [fetchLeads]);
 
+  const formatCurrency = (value) => {
+    if (!value && value !== 0) return '$0';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+  };
+
   const groupedLeads = useMemo(() => {
     const groups = {};
     STAGES.forEach(stage => { groups[stage] = []; });
@@ -38,6 +43,14 @@ function Pipeline() {
     });
     return groups;
   }, [leads]);
+
+  const stageValues = useMemo(() => {
+    const values = {};
+    STAGES.forEach(stage => {
+      values[stage] = (groupedLeads[stage] || []).reduce((sum, lead) => sum + (parseFloat(lead.deal_value) || 0), 0);
+    });
+    return values;
+  }, [groupedLeads]);
 
   const handleStageChange = async (leadId, newStage) => {
     try {
@@ -76,12 +89,19 @@ function Pipeline() {
               style={{ borderTopColor: STAGE_COLORS[stage] }}
             >
               <span className="pipeline-column-title">{stage}</span>
-              <span
-                className="pipeline-column-count"
-                style={{ background: STAGE_BG_COLORS[stage], color: STAGE_COLORS[stage] }}
-              >
-                {groupedLeads[stage].length}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                <span
+                  className="pipeline-column-count"
+                  style={{ background: STAGE_BG_COLORS[stage], color: STAGE_COLORS[stage] }}
+                >
+                  {groupedLeads[stage].length}
+                </span>
+                {stageValues[stage] > 0 && (
+                  <span style={{ fontSize: '0.6875rem', color: '#2e7d32', fontWeight: 600 }}>
+                    {formatCurrency(stageValues[stage])}
+                  </span>
+                )}
+              </div>
             </div>
             <div className="pipeline-column-body">
               {groupedLeads[stage].length === 0 ? (
@@ -101,6 +121,11 @@ function Pipeline() {
                           {lead.priority && (
                             <span className={`priority-badge priority-${lead.priority.toLowerCase()}`}>
                               {lead.priority}
+                            </span>
+                          )}
+                          {lead.deal_value && (
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#2e7d32' }}>
+                              {formatCurrency(lead.deal_value)}
                             </span>
                           )}
                         </div>
