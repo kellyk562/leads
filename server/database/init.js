@@ -67,6 +67,7 @@ async function initDatabase() {
         callback_time_from TEXT,
         callback_time_to TEXT,
         priority TEXT DEFAULT 'Medium' CHECK(priority IN ('Low', 'Medium', 'High')),
+        stage TEXT DEFAULT 'New Lead' CHECK(stage IN ('New Lead', 'Contacted', 'Demo Scheduled', 'Demo Completed', 'Proposal Sent', 'Negotiating', 'Closed Won', 'Closed Lost')),
         callback_date DATE,
         source TEXT,
         user_id INTEGER REFERENCES users(id) DEFAULT 1,
@@ -88,6 +89,20 @@ async function initDatabase() {
       END $$;
     `);
 
+    // Add stage column if it doesn't exist (for existing databases)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'stage'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN stage TEXT DEFAULT 'New Lead';
+        END IF;
+      END $$;
+    `);
+    await client.query(`UPDATE leads SET stage = 'New Lead' WHERE stage IS NULL`);
+
     // Create contact_history table
     await client.query(`
       CREATE TABLE IF NOT EXISTS contact_history (
@@ -104,6 +119,7 @@ async function initDatabase() {
     `);
 
     // Create indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_user_id ON leads(user_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_lead_contact_history ON contact_history(lead_id)`);

@@ -8,10 +8,12 @@ import {
   FaUserPlus
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 
 function Dashboard() {
   const [todayCallbacks, setTodayCallbacks] = useState([]);
   const [allLeads, setAllLeads] = useState([]);
+  const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -20,12 +22,14 @@ function Dashboard() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const [todayRes, leadsRes] = await Promise.all([
+      const [todayRes, leadsRes, statsRes] = await Promise.all([
         leadsApi.getTodayCallbacks(),
-        leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' })
+        leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' }),
+        leadsApi.getStats()
       ]);
       setTodayCallbacks(todayRes.data);
       setAllLeads(leadsRes.data.slice(0, 5)); // Get 5 most recent leads
+      setStats(statsRes.data);
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
     } finally {
@@ -141,6 +145,40 @@ function Dashboard() {
           <div style={{ textAlign: 'center', marginTop: '1rem' }}>
             <Link to="/leads" className="btn btn-outline">
               View All Leads <FaArrowRight />
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Pipeline Summary */}
+      {stats?.stageCounts && (
+        <div className="callbacks-section">
+          <h2>
+            <FaArrowRight />
+            Pipeline Summary
+          </h2>
+          <div className="pipeline-summary">
+            {STAGES.map(stage => (
+              <div
+                key={stage}
+                className="pipeline-summary-card"
+                style={{
+                  borderTopColor: STAGE_COLORS[stage],
+                  background: STAGE_BG_COLORS[stage],
+                }}
+              >
+                <div className="pipeline-summary-count" style={{ color: STAGE_COLORS[stage] }}>
+                  {stats.stageCounts[stage] || 0}
+                </div>
+                <div className="pipeline-summary-label" style={{ color: STAGE_COLORS[stage] }}>
+                  {stage}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+            <Link to="/pipeline" className="btn btn-outline">
+              View Pipeline <FaArrowRight />
             </Link>
           </div>
         </div>

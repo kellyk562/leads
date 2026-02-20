@@ -16,6 +16,7 @@ import {
   FaDownload
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 
 function LeadsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -23,6 +24,7 @@ function LeadsList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [priorityFilter, setPriorityFilter] = useState(searchParams.get('priority') || '');
+  const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -36,6 +38,7 @@ function LeadsList() {
       };
       if (search) params.search = search;
       if (priorityFilter) params.priority = priorityFilter;
+      if (stageFilter) params.stage = stageFilter;
 
       const response = await leadsApi.getAll(params);
       setLeads(response.data);
@@ -45,7 +48,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, priorityFilter, sortBy, sortOrder]);
+  }, [search, priorityFilter, stageFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -55,8 +58,9 @@ function LeadsList() {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (priorityFilter) params.set('priority', priorityFilter);
+    if (stageFilter) params.set('stage', stageFilter);
     setSearchParams(params);
-  }, [search, priorityFilter, setSearchParams]);
+  }, [search, priorityFilter, stageFilter, setSearchParams]);
 
   const handleDelete = async (id) => {
     try {
@@ -170,6 +174,17 @@ function LeadsList() {
 
           <select
             className="filter-select"
+            value={stageFilter}
+            onChange={(e) => setStageFilter(e.target.value)}
+          >
+            <option value="">All Stages</option>
+            {STAGES.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          <select
+            className="filter-select"
             value={`${sortBy}-${sortOrder}`}
             onChange={(e) => {
               const [col, ord] = e.target.value.split('-');
@@ -215,6 +230,7 @@ function LeadsList() {
                   <th onClick={() => toggleSort('dispensary_name')} style={{ cursor: 'pointer' }}>
                     Dispensary <FaSort />
                   </th>
+                  <th>Stage</th>
                   <th>Recommended Contact</th>
                   <th>Location</th>
                   <th>
@@ -235,6 +251,17 @@ function LeadsList() {
                       </Link>
                       <span className={`priority-badge priority-${lead.priority?.toLowerCase()}`} style={{ marginLeft: '0.5rem' }}>
                         {lead.priority || 'Medium'}
+                      </span>
+                    </td>
+                    <td>
+                      <span
+                        className="stage-badge"
+                        style={{
+                          background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+                          color: STAGE_COLORS[lead.stage || 'New Lead'],
+                        }}
+                      >
+                        {lead.stage || 'New Lead'}
                       </span>
                     </td>
                     <td>

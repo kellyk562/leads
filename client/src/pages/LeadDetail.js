@@ -17,6 +17,7 @@ import {
   FaCopy
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 
 function LeadDetail() {
   const { id } = useParams();
@@ -27,6 +28,7 @@ function LeadDetail() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
+  const [showStageDropdown, setShowStageDropdown] = useState(false);
   const [historyForm, setHistoryForm] = useState({
     contact_method: 'Phone',
     contact_person: '',
@@ -73,6 +75,19 @@ function LeadDetail() {
     } catch (error) {
       console.error('Error updating priority:', error);
       toast.error('Failed to update priority');
+    }
+  };
+
+  const handleStageChange = async (newStage) => {
+    try {
+      await leadsApi.updateStage(id, newStage);
+      setLead(prev => ({ ...prev, stage: newStage }));
+      setShowStageDropdown(false);
+      toast.success(`Stage updated to ${newStage}`);
+      fetchLead(); // refresh to get updated contact history
+    } catch (error) {
+      console.error('Error updating stage:', error);
+      toast.error('Failed to update stage');
     }
   };
 
@@ -203,6 +218,57 @@ function LeadDetail() {
           <div className="lead-detail-title" style={{ width: '100%' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
               <h2 style={{ margin: 0 }}>{lead.dispensary_name}</h2>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                {/* Stage Badge */}
+                <div style={{ position: 'relative' }}>
+                  <button
+                    onClick={() => { setShowStageDropdown(!showStageDropdown); setShowPriorityDropdown(false); }}
+                    className="stage-badge"
+                    style={{
+                      cursor: 'pointer',
+                      border: 'none',
+                      background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+                      color: STAGE_COLORS[lead.stage || 'New Lead'],
+                    }}
+                  >
+                    {lead.stage || 'New Lead'} ▼
+                  </button>
+                  {showStageDropdown && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: 0,
+                      marginTop: '0.25rem',
+                      background: 'white',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                      zIndex: 100,
+                      minWidth: '160px',
+                      overflow: 'hidden'
+                    }}>
+                      {STAGES.map(stage => (
+                        <button
+                          key={stage}
+                          onClick={() => handleStageChange(stage)}
+                          style={{
+                            display: 'block',
+                            width: '100%',
+                            padding: '0.5rem 1rem',
+                            border: 'none',
+                            background: (lead.stage || 'New Lead') === stage ? STAGE_BG_COLORS[stage] : 'white',
+                            cursor: 'pointer',
+                            textAlign: 'left',
+                            fontSize: '0.8125rem',
+                            fontWeight: (lead.stage || 'New Lead') === stage ? '600' : '400',
+                            color: STAGE_COLORS[stage]
+                          }}
+                        >
+                          {stage}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               {lead.priority && (
                 <div style={{ position: 'relative' }}>
                   <button
@@ -250,6 +316,7 @@ function LeadDetail() {
                   )}
                 </div>
               )}
+              </div>
             </div>
             {lead.address && (
               <p style={{ color: '#6c757d', margin: '0.25rem 0 0', fontSize: '0.95rem' }}>

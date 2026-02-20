@@ -3,6 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaSave, FaTimes, FaArrowLeft } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
+import { STAGES } from '../constants/stages';
 
 const initialFormState = {
   contact_date: new Date().toISOString().split('T')[0],
@@ -26,6 +27,7 @@ const initialFormState = {
   callback_time_from: '',
   callback_time_to: '',
   priority: 'Medium',
+  stage: 'New Lead',
   callback_date: ''
 };
 
@@ -438,6 +440,15 @@ function LeadForm() {
                   <option value="Low">Low</option>
                   <option value="Medium">Medium</option>
                   <option value="High">High</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label>Stage</label>
+                <select name="stage" value={formData.stage} onChange={handleChange}>
+                  {STAGES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
                 </select>
               </div>
 

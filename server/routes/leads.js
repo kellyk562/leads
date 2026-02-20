@@ -4,18 +4,21 @@ const db = require('../database/init');
 
 const router = express.Router();
 
+const VALID_STAGES = ['New Lead', 'Contacted', 'Demo Scheduled', 'Demo Completed', 'Proposal Sent', 'Negotiating', 'Closed Won', 'Closed Lost'];
+
 // Validation middleware
 const validateLead = [
   body('dispensary_name').notEmpty().trim().withMessage('Dispensary name is required'),
   body('contact_date').notEmpty().withMessage('Contact date is required'),
   body('contact_email').optional({ values: 'falsy' }).isEmail().withMessage('Invalid email format'),
   body('priority').optional().isIn(['Low', 'Medium', 'High']),
+  body('stage').optional().isIn(VALID_STAGES),
 ];
 
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, priority, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, priority, stage, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = 'SELECT * FROM leads WHERE 1=1';
     const params = [];
@@ -33,7 +36,13 @@ router.get('/', async (req, res) => {
       paramIndex++;
     }
 
-    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority'];
+    if (stage && VALID_STAGES.includes(stage)) {
+      sql += ` AND stage = $${paramIndex}`;
+      params.push(stage);
+      paramIndex++;
+    }
+
+    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority', 'stage'];
     const sortColumn = validSortColumns.includes(sort) ? sort : 'updated_at';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -117,6 +126,13 @@ router.get('/stats', async (req, res) => {
     `, [weekAgo]);
     stats.newThisWeek = newResult?.count || 0;
 
+    // Stage counts
+    const stageRows = await db.all(`SELECT stage, COUNT(*) as count FROM leads GROUP BY stage`);
+    stats.stageCounts = {};
+    for (const row of stageRows) {
+      stats.stageCounts[row.stage || 'New Lead'] = parseInt(row.count, 10);
+    }
+
     res.json(stats);
   } catch (error) {
     console.error('Error fetching stats:', error);
@@ -180,6 +196,7 @@ router.post('/', validateLead, async (req, res) => {
       callback_time_from,
       callback_time_to,
       priority = 'Medium',
+      stage = 'New Lead',
       callback_date
     } = req.body;
 
@@ -192,8 +209,8 @@ router.post('/', validateLead, async (req, res) => {
         contact_date, dispensary_name, address, city, state, zip_code,
         dispensary_number, contact_name, contact_position, manager_name, owner_name,
         contact_number, contact_email, website, current_pos_system,
-        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, callback_date, user_id
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        notes, callback_days, callback_time_slots, callback_time_from, callback_time_to, priority, stage, callback_date, user_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       RETURNING id
     `;
 
@@ -201,7 +218,7 @@ router.post('/', validateLead, async (req, res) => {
       contact_date, dispensary_name, address, city, state, zip_code,
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
-      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, callback_date || null, 1
+      notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority, stage, callback_date || null, 1
     ]);
 
     const newLead = await db.get('SELECT * FROM leads WHERE id = $1', [result.lastInsertRowid]);
@@ -247,6 +264,7 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
       callback_time_from,
       callback_time_to,
       priority,
+      stage,
       callback_date
     } = req.body;
 
@@ -277,9 +295,10 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
         callback_time_from = $19,
         callback_time_to = $20,
         priority = $21,
-        callback_date = $22,
+        stage = $22,
+        callback_date = $23,
         updated_at = CURRENT_TIMESTAMP
-      WHERE id = $23
+      WHERE id = $24
     `;
 
     await db.run(sql, [
@@ -287,6 +306,7 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
       dispensary_number, contact_name, contact_position, manager_name, owner_name,
       contact_number, contact_email, website, current_pos_system,
       notes, callbackDaysJson, callbackTimeSlotsJson, callback_time_from, callback_time_to, priority,
+      stage || existing.stage || 'New Lead',
       callback_date || null,
       req.params.id
     ]);
@@ -296,6 +316,41 @@ router.put('/:id', [param('id').isInt(), ...validateLead], async (req, res) => {
   } catch (error) {
     console.error('Error updating lead:', error);
     res.status(500).json({ error: 'Failed to update lead' });
+  }
+});
+
+// Update lead stage (lightweight, auto-logs to contact history)
+router.patch('/:id/stage', [
+  param('id').isInt(),
+  body('stage').isIn(VALID_STAGES).withMessage('Invalid stage'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    const { stage } = req.body;
+    const oldStage = existing.stage || 'New Lead';
+
+    await db.run(`UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [stage, req.params.id]);
+
+    // Auto-log stage change to contact history
+    await db.run(`
+      INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+      VALUES ($1, 'Other', $2, $3)
+    `, [req.params.id, `Stage changed from "${oldStage}" to "${stage}"`, `Stage: ${stage}`]);
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    res.json(updatedLead);
+  } catch (error) {
+    console.error('Error updating stage:', error);
+    res.status(500).json({ error: 'Failed to update stage' });
   }
 });
 
@@ -397,7 +452,7 @@ router.get('/export/csv', async (req, res) => {
       'Dispensary Phone', 'Primary Contact', 'Contact Position', 'Recommended Contact',
       'Recommended Position', 'Recommended Phone', 'Recommended Email', 'Website',
       'Current POS', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
-      'Priority', 'Callback Date', 'Created At', 'Updated At'
+      'Priority', 'Stage', 'Callback Date', 'Created At', 'Updated At'
     ];
 
     // Convert leads to CSV rows
@@ -423,6 +478,7 @@ router.get('/export/csv', async (req, res) => {
       lead.callback_time_from || '',
       lead.callback_time_to || '',
       lead.priority || '',
+      lead.stage || 'New Lead',
       lead.callback_date || '',
       lead.created_at || '',
       lead.updated_at || ''
