@@ -50,6 +50,18 @@ export const leadsApi = {
 
   // Get contact history for a lead
   getHistory: (leadId) => api.get(`/leads/${leadId}/history`),
+
+  // Bulk create leads (import)
+  bulkCreate: (leads, source) => api.post('/leads/bulk', { leads, source }),
+
+  // Check for duplicate leads
+  checkDuplicates: (names) => api.post('/leads/check-duplicates', { names }),
+
+  // Bulk update stage
+  bulkUpdateStage: (ids, stage) => api.patch('/leads/bulk/stage', { ids, stage }),
+
+  // Bulk update priority
+  bulkUpdatePriority: (ids, priority) => api.patch('/leads/bulk/priority', { ids, priority }),
 };
 
 // Tasks API

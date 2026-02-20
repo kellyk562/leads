@@ -13,7 +13,9 @@ import {
   FaPhone,
   FaEnvelope,
   FaMapMarkerAlt,
-  FaDownload
+  FaDownload,
+  FaUpload,
+  FaTimes
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
@@ -28,6 +30,8 @@ function LeadsList() {
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -61,6 +65,60 @@ function LeadsList() {
     if (stageFilter) params.set('stage', stageFilter);
     setSearchParams(params);
   }, [search, priorityFilter, stageFilter, setSearchParams]);
+
+  // Clear selection on filter change
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setSelectAll(false);
+  }, [search, priorityFilter, stageFilter, sortBy, sortOrder]);
+
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelectedIds(new Set());
+      setSelectAll(false);
+    } else {
+      setSelectedIds(new Set(leads.map(l => l.id)));
+      setSelectAll(true);
+    }
+  };
+
+  const toggleSelectOne = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setSelectAll(false);
+  };
+
+  const handleBulkStage = async (stage) => {
+    const ids = [...selectedIds];
+    try {
+      await leadsApi.bulkUpdateStage(ids, stage);
+      toast.success(`Updated ${ids.length} leads to "${stage}"`);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+      fetchLeads();
+    } catch (error) {
+      console.error('Error bulk updating stage:', error);
+      toast.error('Failed to update stages');
+    }
+  };
+
+  const handleBulkPriority = async (priority) => {
+    const ids = [...selectedIds];
+    try {
+      await leadsApi.bulkUpdatePriority(ids, priority);
+      toast.success(`Updated ${ids.length} leads to "${priority}" priority`);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+      fetchLeads();
+    } catch (error) {
+      console.error('Error bulk updating priority:', error);
+      toast.error('Failed to update priorities');
+    }
+  };
 
   const handleDelete = async (id) => {
     try {
@@ -145,6 +203,9 @@ function LeadsList() {
         <div className="leads-header">
           <h2>Sales Leads</h2>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Link to="/import" className="btn btn-outline">
+              <FaUpload /> Import
+            </Link>
             <button onClick={handleExport} className="btn btn-outline">
               <FaDownload /> Export
             </button>
@@ -240,6 +301,14 @@ function LeadsList() {
             <table className="leads-table">
               <thead>
                 <tr>
+                  <th style={{ width: '40px' }}>
+                    <input
+                      type="checkbox"
+                      checked={selectAll}
+                      onChange={toggleSelectAll}
+                      style={{ accentColor: 'var(--primary-color)', cursor: 'pointer' }}
+                    />
+                  </th>
                   <th onClick={() => toggleSort('dispensary_name')} style={{ cursor: 'pointer' }}>
                     Dispensary <FaSort />
                   </th>
@@ -259,7 +328,15 @@ function LeadsList() {
               </thead>
               <tbody>
                 {leads.map((lead) => (
-                  <tr key={lead.id}>
+                  <tr key={lead.id} style={selectedIds.has(lead.id) ? { background: '#e8f5e9' } : {}}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(lead.id)}
+                        onChange={() => toggleSelectOne(lead.id)}
+                        style={{ accentColor: 'var(--primary-color)', cursor: 'pointer' }}
+                      />
+                    </td>
                     <td>
                       <Link to={`/leads/${lead.id}`} style={{ fontWeight: 600, color: getPriorityColor(lead.priority) }}>
                         {lead.dispensary_name}
@@ -358,6 +435,40 @@ function LeadsList() {
           </div>
         )}
       </div>
+
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="bulk-action-bar">
+          <span style={{ fontWeight: 600 }}>{selectedIds.size} lead{selectedIds.size !== 1 ? 's' : ''} selected</span>
+          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+            <select
+              defaultValue=""
+              onChange={(e) => { if (e.target.value) handleBulkStage(e.target.value); e.target.value = ''; }}
+              style={{ padding: '0.375rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '0.875rem' }}
+            >
+              <option value="" disabled>Change Stage...</option>
+              {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              defaultValue=""
+              onChange={(e) => { if (e.target.value) handleBulkPriority(e.target.value); e.target.value = ''; }}
+              style={{ padding: '0.375rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '0.875rem' }}
+            >
+              <option value="" disabled>Change Priority...</option>
+              <option value="High">High</option>
+              <option value="Medium">Medium</option>
+              <option value="Low">Low</option>
+            </select>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
+              onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }}
+            >
+              <FaTimes /> Clear
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deleteConfirm && (

@@ -1216,6 +1216,152 @@ body {
   color: var(--primary-color);
 }
 
+/* Bulk Action Bar */
+.bulk-action-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--primary-dark);
+  color: white;
+  padding: 0.75rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 1500;
+}
+
+/* Import Drop Zone */
+.import-drop-zone {
+  border: 2px dashed var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 3rem 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background-color 0.2s;
+}
+
+.import-drop-zone:hover,
+.import-drop-zone.drag-over {
+  border-color: var(--primary-color);
+  background: rgba(45, 90, 39, 0.04);
+}
+
+/* Import Step Indicator */
+.import-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.import-step {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.import-step::after {
+  content: '';
+  width: 40px;
+  height: 2px;
+  background: var(--border-color);
+  margin: 0 0.25rem;
+}
+
+.import-step:last-child::after {
+  display: none;
+}
+
+.import-step-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: var(--border-color);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.import-step.active .import-step-dot {
+  background: var(--primary-color);
+  color: white;
+}
+
+.import-step.completed .import-step-dot {
+  background: var(--success-color);
+  color: white;
+}
+
+.import-step.completed::after {
+  background: var(--success-color);
+}
+
+.import-step-label {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.import-step.active .import-step-label {
+  color: var(--primary-color);
+  font-weight: 600;
+}
+
+.import-step.completed .import-step-label {
+  color: var(--success-color);
+}
+
+/* Import Preview Table */
+.import-preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.import-preview-table th,
+.import-preview-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.import-preview-table th {
+  background: var(--light-bg);
+  font-weight: 600;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.import-preview-table tbody tr:hover {
+  background: var(--light-bg);
+}
+
+/* Import Row Duplicate Highlight */
+.import-row-duplicate {
+  background: #fff8e1 !important;
+}
+
+.import-row-duplicate:hover {
+  background: #fff3cd !important;
+}
+
+/* Mapping Row */
+.mapping-row {
+  min-width: 160px;
+  vertical-align: top;
+}
+
 /* Google Places Autocomplete dropdown */
 .pac-container {
   z-index: 10000 !important;

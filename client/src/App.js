@@ -12,6 +12,7 @@ import Pipeline from './pages/Pipeline';
 import Tasks from './pages/Tasks';
 import EmailTemplates from './pages/EmailTemplates';
 import Analytics from './pages/Analytics';
+import ImportLeads from './pages/ImportLeads';
 
 function AppHeader() {
   return (
@@ -49,6 +50,7 @@ function App() {
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/templates" element={<EmailTemplates />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/import" element={<ImportLeads />} />
             <Route path="/leads/new" element={<LeadForm />} />
             <Route path="/leads/:id" element={<LeadDetail />} />
             <Route path="/leads/:id/edit" element={<LeadForm />} />

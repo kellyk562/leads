@@ -264,6 +264,200 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
+// Bulk create leads (CSV import)
+router.post('/bulk', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { leads, source } = req.body;
+
+    if (!Array.isArray(leads) || leads.length === 0) {
+      return res.status(400).json({ error: 'leads array is required' });
+    }
+
+    if (leads.length > 500) {
+      return res.status(400).json({ error: 'Maximum 500 leads per request' });
+    }
+
+    const today = new Date().toISOString().split('T')[0];
+    const errors = [];
+    let created = 0;
+
+    await client.query('BEGIN');
+
+    for (let i = 0; i < leads.length; i++) {
+      const row = leads[i];
+
+      if (!row.dispensary_name || !row.dispensary_name.trim()) {
+        errors.push({ row: i, error: 'dispensary_name is required' });
+        continue;
+      }
+
+      try {
+        await client.query(`
+          INSERT INTO leads (
+            contact_date, dispensary_name, address, city, state, zip_code,
+            dispensary_number, contact_name, contact_position, manager_name, owner_name,
+            contact_number, contact_email, website, current_pos_system,
+            notes, priority, stage, deal_value, source, user_id
+          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+        `, [
+          row.contact_date || today,
+          row.dispensary_name.trim(),
+          row.address || null,
+          row.city || null,
+          row.state || null,
+          row.zip_code || null,
+          row.dispensary_number || null,
+          row.contact_name || null,
+          row.contact_position || null,
+          row.manager_name || null,
+          row.owner_name || null,
+          row.contact_number || null,
+          row.contact_email || null,
+          row.website || null,
+          row.current_pos_system || null,
+          row.notes || null,
+          ['Low', 'Medium', 'High'].includes(row.priority) ? row.priority : 'Medium',
+          VALID_STAGES.includes(row.stage) ? row.stage : 'New Lead',
+          row.deal_value || null,
+          source || row.source || null,
+          1
+        ]);
+        created++;
+      } catch (err) {
+        errors.push({ row: i, error: err.message });
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ created, errors });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error bulk creating leads:', error);
+    res.status(500).json({ error: 'Failed to bulk create leads' });
+  } finally {
+    client.release();
+  }
+});
+
+// Check for duplicate leads by name
+router.post('/check-duplicates', async (req, res) => {
+  try {
+    const { names } = req.body;
+
+    if (!Array.isArray(names) || names.length === 0) {
+      return res.json({ duplicates: [] });
+    }
+
+    const duplicates = [];
+
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i];
+      if (!name || !name.trim()) continue;
+
+      const matches = await db.all(
+        `SELECT id, dispensary_name, city, stage FROM leads
+         WHERE dispensary_name ILIKE $1 OR dispensary_name ILIKE $2`,
+        [name.trim(), `%${name.trim()}%`]
+      );
+
+      for (const match of matches) {
+        duplicates.push({
+          input_name: name,
+          input_index: i,
+          existing: {
+            id: match.id,
+            dispensary_name: match.dispensary_name,
+            city: match.city,
+            stage: match.stage
+          }
+        });
+      }
+    }
+
+    res.json({ duplicates });
+  } catch (error) {
+    console.error('Error checking duplicates:', error);
+    res.status(500).json({ error: 'Failed to check duplicates' });
+  }
+});
+
+// Bulk update stage
+router.patch('/bulk/stage', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { ids, stage } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!VALID_STAGES.includes(stage)) {
+      return res.status(400).json({ error: 'Invalid stage' });
+    }
+
+    await client.query('BEGIN');
+
+    // Get current stages for logging
+    const currentLeads = await client.query(
+      `SELECT id, stage, dispensary_name FROM leads WHERE id = ANY($1::int[])`,
+      [ids]
+    );
+
+    // Update all stages
+    await client.query(
+      `UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($2::int[])`,
+      [stage, ids]
+    );
+
+    // Log stage changes to contact_history
+    for (const lead of currentLeads.rows) {
+      const oldStage = lead.stage || 'New Lead';
+      if (oldStage !== stage) {
+        await client.query(
+          `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+           VALUES ($1, 'Other', $2, $3)`,
+          [lead.id, `Stage changed from "${oldStage}" to "${stage}"`, `Stage: ${stage}`]
+        );
+      }
+    }
+
+    await client.query('COMMIT');
+    res.json({ updated: currentLeads.rows.length });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error bulk updating stage:', error);
+    res.status(500).json({ error: 'Failed to bulk update stage' });
+  } finally {
+    client.release();
+  }
+});
+
+// Bulk update priority
+router.patch('/bulk/priority', async (req, res) => {
+  try {
+    const { ids, priority } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    if (!['Low', 'Medium', 'High'].includes(priority)) {
+      return res.status(400).json({ error: 'Invalid priority' });
+    }
+
+    const result = await db.run(
+      `UPDATE leads SET priority = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($2::int[])`,
+      [priority, ids]
+    );
+
+    res.json({ updated: result.changes });
+  } catch (error) {
+    console.error('Error bulk updating priority:', error);
+    res.status(500).json({ error: 'Failed to bulk update priority' });
+  }
+});
+
 // Get single lead by ID
 router.get('/:id', param('id').isInt(), async (req, res) => {
   try {
