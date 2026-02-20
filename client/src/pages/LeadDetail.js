@@ -202,8 +202,8 @@ function LeadDetail() {
     if (!text || !lead) return text || '';
     const fields = {
       dispensary_name: lead.dispensary_name || '',
-      contact_name: lead.contact_name || '',
-      manager_name: lead.manager_name || '',
+      reference: lead.contact_name || '',
+      contact_name: lead.manager_name || '',
       contact_email: lead.contact_email || '',
       dispensary_number: lead.dispensary_number || '',
       contact_number: lead.contact_number || '',

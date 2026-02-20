@@ -377,17 +377,6 @@ function LeadForm() {
             <h3>Contact Information</h3>
             <div className="form-grid">
               <div className="form-group">
-                <label>Reference</label>
-                <input
-                  type="text"
-                  name="contact_name"
-                  value={formData.contact_name}
-                  onChange={handleChange}
-                  placeholder="Name"
-                />
-              </div>
-
-              <div className="form-group">
                 <label>Name</label>
                 <input
                   type="text"
@@ -433,6 +422,17 @@ function LeadForm() {
                     {errors.contact_email}
                   </span>
                 )}
+              </div>
+
+              <div className="form-group">
+                <label>Reference</label>
+                <input
+                  type="text"
+                  name="contact_name"
+                  value={formData.contact_name}
+                  onChange={handleChange}
+                  placeholder="Who referred you?"
+                />
               </div>
             </div>
           </div>
