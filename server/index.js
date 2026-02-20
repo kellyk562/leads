@@ -28,8 +28,10 @@ async function startServer() {
     // API Routes (loaded after database is initialized)
     const leadsRoutes = require('./routes/leads');
     const tasksRoutes = require('./routes/tasks');
+    const emailTemplatesRoutes = require('./routes/emailTemplates');
     app.use('/api/leads', leadsRoutes);
     app.use('/api/tasks', tasksRoutes);
+    app.use('/api/email-templates', emailTemplatesRoutes);
 
     // Serve static files from React app in production
     if (process.env.NODE_ENV === 'production') {

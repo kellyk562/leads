@@ -17,7 +17,7 @@ import {
   FaCopy,
   FaCheck
 } from 'react-icons/fa';
-import { leadsApi, tasksApi } from '../services/api';
+import { leadsApi, tasksApi, emailTemplatesApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 
 const formatCurrency = (value) => {
@@ -51,6 +51,12 @@ function LeadDetail() {
     outcome: '',
     next_callback: ''
   });
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emailStep, setEmailStep] = useState(1); // 1 = select template, 2 = preview
+  const [emailTemplates, setEmailTemplates] = useState([]);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [emailSubject, setEmailSubject] = useState('');
+  const [emailBody, setEmailBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const fetchLead = useCallback(async () => {
@@ -183,6 +189,81 @@ function LeadDetail() {
     } catch (error) {
       console.error('Error deleting task:', error);
       toast.error('Failed to delete task');
+    }
+  };
+
+  const renderTemplate = useCallback((text) => {
+    if (!text || !lead) return text || '';
+    const fields = {
+      dispensary_name: lead.dispensary_name || '',
+      contact_name: lead.contact_name || '',
+      manager_name: lead.manager_name || '',
+      contact_email: lead.contact_email || '',
+      dispensary_number: lead.dispensary_number || '',
+      contact_number: lead.contact_number || '',
+      current_pos_system: lead.current_pos_system || '',
+      address: lead.address || '',
+      city: lead.city || '',
+      state: lead.state || '',
+    };
+    return text.replace(/\{\{(\w+)\}\}/g, (match, field) => fields[field] !== undefined ? fields[field] : match);
+  }, [lead]);
+
+  const openEmailModal = async () => {
+    try {
+      const response = await emailTemplatesApi.getAll();
+      setEmailTemplates(response.data);
+    } catch (error) {
+      console.error('Error fetching email templates:', error);
+      toast.error('Failed to load email templates');
+      return;
+    }
+    setEmailStep(1);
+    setSelectedTemplate(null);
+    setEmailSubject('');
+    setEmailBody('');
+    setShowEmailModal(true);
+  };
+
+  const selectTemplate = (template) => {
+    setSelectedTemplate(template);
+    setEmailSubject(renderTemplate(template.subject));
+    setEmailBody(renderTemplate(template.body));
+    setEmailStep(2);
+  };
+
+  const handleCopyEmail = () => {
+    const fullText = `Subject: ${emailSubject}\n\n${emailBody}`;
+    navigator.clipboard.writeText(fullText).then(() => {
+      toast.success('Email copied to clipboard!');
+    }).catch(() => {
+      toast.error('Failed to copy');
+    });
+  };
+
+  const handleOpenMailto = () => {
+    const mailto = `mailto:${encodeURIComponent(lead.contact_email || '')}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
+    window.open(mailto, '_blank');
+  };
+
+  const handleLogEmail = async () => {
+    setSubmitting(true);
+    try {
+      await leadsApi.addHistory(id, {
+        contact_method: 'Email',
+        notes: emailBody,
+        outcome: `Sent template: ${selectedTemplate?.name || 'Custom'}`,
+        email_template_id: selectedTemplate?.id || null,
+        email_subject: emailSubject
+      });
+      toast.success('Email logged to contact history');
+      setShowEmailModal(false);
+      fetchLead();
+    } catch (error) {
+      console.error('Error logging email:', error);
+      toast.error('Failed to log email');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -401,6 +482,13 @@ function LeadDetail() {
             >
               <FaPlus /> Log Contact
             </button>
+            <button
+              className="btn btn-outline"
+              onClick={openEmailModal}
+              style={{ flex: '1 1 auto' }}
+            >
+              <FaEnvelope /> Send Email
+            </button>
             <Link to={`/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
               <FaEdit /> Edit
             </Link>
@@ -599,6 +687,9 @@ function LeadDetail() {
                         {history.contact_method || 'Contact'}
                         {history.contact_person && ` with ${history.contact_person}`}
                       </h4>
+                      {history.email_subject && (
+                        <p style={{ fontWeight: 500, color: '#495057' }}>Subject: {history.email_subject}</p>
+                      )}
                       {history.notes && <p>{history.notes}</p>}
                       {history.outcome && (
                         <p><strong>Outcome:</strong> {history.outcome}</p>
@@ -815,6 +906,110 @@ function LeadDetail() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Send Email Modal */}
+      {showEmailModal && (
+        <div className="modal-overlay" onClick={() => setShowEmailModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '700px' }}>
+            <div className="modal-header">
+              <h3>{emailStep === 1 ? 'Select Email Template' : 'Preview & Send Email'}</h3>
+              <button className="modal-close" onClick={() => setShowEmailModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              {emailStep === 1 ? (
+                <>
+                  {emailTemplates.length > 0 ? (
+                    <div style={{ display: 'grid', gap: '0.75rem' }}>
+                      {emailTemplates.map(template => (
+                        <div
+                          key={template.id}
+                          className="email-template-card"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => selectTemplate(template)}
+                        >
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.25rem' }}>
+                            <h4 style={{ margin: 0, fontSize: '0.9375rem', fontWeight: 600 }}>{template.name}</h4>
+                            <span style={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 600,
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '50px',
+                              background: '#e9ecef',
+                              color: '#495057'
+                            }}>
+                              {template.category || 'General'}
+                            </span>
+                          </div>
+                          <p style={{ margin: 0, fontSize: '0.8125rem', color: '#6c757d' }}>
+                            {template.subject}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ textAlign: 'center', color: '#6c757d' }}>
+                      No templates available. Create one from the Templates page.
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>To</label>
+                    <input
+                      type="text"
+                      value={lead.contact_email || 'No email on file'}
+                      disabled
+                      style={{ background: '#e9ecef' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>Subject</label>
+                    <input
+                      type="text"
+                      value={emailSubject}
+                      onChange={(e) => setEmailSubject(e.target.value)}
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: '1rem' }}>
+                    <label>Body</label>
+                    <textarea
+                      value={emailBody}
+                      onChange={(e) => setEmailBody(e.target.value)}
+                      rows="12"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="modal-footer" style={{ justifyContent: emailStep === 2 ? 'space-between' : 'flex-end' }}>
+              {emailStep === 2 && (
+                <button className="btn btn-outline" onClick={() => setEmailStep(1)}>
+                  Back
+                </button>
+              )}
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {emailStep === 2 && (
+                  <>
+                    <button className="btn btn-outline" onClick={handleCopyEmail}>
+                      <FaCopy /> Copy to Clipboard
+                    </button>
+                    <button className="btn btn-secondary" onClick={handleOpenMailto}>
+                      <FaEnvelope /> Open in Email Client
+                    </button>
+                    <button className="btn btn-primary" onClick={handleLogEmail} disabled={submitting}>
+                      {submitting ? 'Logging...' : 'Log & Close'}
+                    </button>
+                  </>
+                )}
+                {emailStep === 1 && (
+                  <button className="btn btn-outline" onClick={() => setShowEmailModal(false)}>Cancel</button>
+                )}
+              </div>
+            </div>
           </div>
         </div>
       )}

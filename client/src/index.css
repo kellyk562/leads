@@ -1183,6 +1183,39 @@ body {
   color: var(--text-secondary);
 }
 
+/* Email Template Cards */
+.email-template-card {
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+
+.email-template-card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+/* Merge Field Help Text */
+.merge-field-help {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: var(--light-bg);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.merge-field-help code {
+  background: #e9ecef;
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  color: var(--primary-color);
+}
+
 /* Google Places Autocomplete dropdown */
 .pac-container {
   z-index: 10000 !important;

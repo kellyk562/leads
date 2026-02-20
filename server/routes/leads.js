@@ -391,12 +391,12 @@ router.post('/:id/history', [
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    const { contact_method, contact_person, notes, outcome, next_callback } = req.body;
+    const { contact_method, contact_person, notes, outcome, next_callback, email_template_id, email_subject } = req.body;
 
     // Convert empty strings to null for PostgreSQL
     const result = await db.run(`
-      INSERT INTO contact_history (lead_id, contact_method, contact_person, notes, outcome, next_callback)
-      VALUES ($1, $2, $3, $4, $5, $6)
+      INSERT INTO contact_history (lead_id, contact_method, contact_person, notes, outcome, next_callback, email_template_id, email_subject)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
       RETURNING id
     `, [
       req.params.id,
@@ -404,7 +404,9 @@ router.post('/:id/history', [
       contact_person || null,
       notes || null,
       outcome || null,
-      next_callback || null
+      next_callback || null,
+      email_template_id || null,
+      email_subject || null
     ]);
 
     // Update lead's updated_at

@@ -60,4 +60,13 @@ export const tasksApi = {
   delete: (id) => api.delete(`/tasks/${id}`),
 };
 
+// Email Templates API
+export const emailTemplatesApi = {
+  getAll: () => api.get('/email-templates'),
+  getById: (id) => api.get(`/email-templates/${id}`),
+  create: (data) => api.post('/email-templates', data),
+  update: (id, data) => api.put(`/email-templates/${id}`, data),
+  delete: (id) => api.delete(`/email-templates/${id}`),
+};
+
 export default api;

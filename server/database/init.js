@@ -149,6 +149,46 @@ async function initDatabase() {
       )
     `);
 
+    // Create email_templates table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS email_templates (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        body TEXT NOT NULL,
+        category TEXT DEFAULT 'General',
+        is_default BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Add email_template_id column to contact_history if it doesn't exist
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'contact_history' AND column_name = 'email_template_id'
+        ) THEN
+          ALTER TABLE contact_history ADD COLUMN email_template_id INTEGER REFERENCES email_templates(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Add email_subject column to contact_history if it doesn't exist
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'contact_history' AND column_name = 'email_subject'
+        ) THEN
+          ALTER TABLE contact_history ADD COLUMN email_subject TEXT;
+        END IF;
+      END $$;
+    `);
+
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
@@ -157,6 +197,88 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_lead_id ON tasks(lead_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_email_templates_category ON email_templates(category)`);
+
+    // Seed default email templates (only if table is empty)
+    const templateCount = await client.query('SELECT COUNT(*) as count FROM email_templates');
+    if (parseInt(templateCount.rows[0].count) === 0) {
+      await client.query(`
+        INSERT INTO email_templates (name, subject, body, category, is_default) VALUES
+        (
+          'Introduction',
+          'Elevate Your Dispensary Operations at {{dispensary_name}}',
+          'Hi {{contact_name}},
+
+I hope this message finds you well. My name is Ken, and I specialize in helping dispensaries like {{dispensary_name}} streamline their operations with modern point-of-sale solutions.
+
+I noticed you''re currently using {{current_pos_system}}, and I''d love to show you how our platform can help improve efficiency, compliance tracking, and customer experience.
+
+Would you be open to a brief call this week to discuss how we can support {{dispensary_name}}?
+
+Best regards,
+Ken',
+          'Intro',
+          true
+        ),
+        (
+          'Follow-Up',
+          'Following Up - POS Solutions for {{dispensary_name}}',
+          'Hi {{contact_name}},
+
+I wanted to follow up on my previous message about upgrading the point-of-sale system at {{dispensary_name}}.
+
+I understand you''re busy, but I truly believe we can help improve your day-to-day operations. Many dispensaries that switched from {{current_pos_system}} have seen significant improvements in checkout speed and inventory accuracy.
+
+Do you have 15 minutes this week for a quick chat?
+
+Best regards,
+Ken',
+          'Follow-Up',
+          true
+        ),
+        (
+          'Proposal',
+          'POS Proposal for {{dispensary_name}}',
+          'Hi {{contact_name}},
+
+Thank you for taking the time to learn about our POS solutions. As discussed, I''ve put together a proposal tailored specifically for {{dispensary_name}}.
+
+Here''s a summary of what we''re proposing:
+- Full POS system setup and configuration
+- Staff training and onboarding support
+- Ongoing technical support and updates
+- Compliance and reporting tools
+
+I''d love to walk you through the details. Please let me know a convenient time to connect.
+
+Best regards,
+Ken',
+          'Proposal',
+          true
+        ),
+        (
+          'Demo Confirmation',
+          'Demo Confirmed - {{dispensary_name}}',
+          'Hi {{contact_name}},
+
+This is a quick confirmation that your demo has been scheduled. I''m looking forward to showing you how our POS platform can benefit {{dispensary_name}}.
+
+During the demo, we''ll cover:
+- Live system walkthrough
+- Integration with your current workflow
+- Compliance and reporting features
+- Q&A
+
+If you need to reschedule, just let me know. See you soon!
+
+Best regards,
+Ken',
+          'Demo',
+          true
+        )
+      `);
+      console.log('Seeded 4 default email templates');
+    }
 
     console.log('Database initialized successfully');
   } finally {
