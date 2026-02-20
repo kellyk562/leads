@@ -341,7 +341,10 @@ function LeadDetail() {
 
   const formatPhoneNumber = (value) => {
     if (!value) return '';
-    const digits = value.replace(/\D/g, '');
+    let digits = value.replace(/\D/g, '');
+    if (digits.length === 11 && digits.startsWith('1')) {
+      digits = digits.slice(1);
+    }
     if (digits.length <= 3) {
       return digits;
     } else if (digits.length <= 6) {

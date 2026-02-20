@@ -157,7 +157,12 @@ function LeadForm() {
 
   const formatPhoneNumber = (value) => {
     // Remove all non-digits
-    const digits = value.replace(/\D/g, '');
+    let digits = value.replace(/\D/g, '');
+
+    // Strip leading country code 1 if 11 digits
+    if (digits.length === 11 && digits.startsWith('1')) {
+      digits = digits.slice(1);
+    }
 
     // Format as (XXX) XXX-XXXX
     if (digits.length <= 3) {
