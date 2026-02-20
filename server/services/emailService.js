@@ -25,8 +25,10 @@ async function verifyConnection() {
 async function sendEmail({ to, subject, text }) {
   const client = getClient();
   const fromAddress = process.env.EMAIL_FROM || 'Ken <ken@contact.weedhurry.com>';
+  const replyTo = process.env.REPLY_TO || 'ken@weedhurry.com';
   const { data, error } = await client.emails.send({
     from: fromAddress,
+    replyTo,
     to,
     subject,
     text,
