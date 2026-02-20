@@ -365,8 +365,6 @@ function ImportLeads() {
     const validLeads = leads.filter(l => l.dispensary_name);
     const skippedCount = [...skipRows].filter(i => validLeads.some(l => l._rowIndex === i)).length;
     const toImport = validLeads.filter(l => !skipRows.has(l._rowIndex)).length;
-    const duplicateRowIndices = new Set(duplicates.map(d => d.input_index));
-
     return (
       <div>
         <div style={{ display: 'flex', gap: '1.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
