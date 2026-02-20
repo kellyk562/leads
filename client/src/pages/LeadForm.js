@@ -348,11 +348,12 @@ function LeadForm() {
                 <label>Current POS System</label>
                 <select name="current_pos_system" value={formData.current_pos_system} onChange={handleChange}>
                   <option value="">Select POS...</option>
+                  <option value="AIQ">AIQ</option>
+                  <option value="Blaze">Blaze</option>
                   <option value="Cova">Cova</option>
+                  <option value="Dutchie">Dutchie</option>
                   <option value="Meadow">Meadow</option>
                   <option value="Treez">Treez</option>
-                  <option value="Blaze">Blaze</option>
-                  <option value="Dutchie">Dutchie</option>
                   <option value="Weave">Weave</option>
                   <option value="N/A">N/A</option>
                 </select>
