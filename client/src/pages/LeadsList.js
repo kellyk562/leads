@@ -114,6 +114,13 @@ function LeadsList() {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
   };
 
+  const getDaysColor = (days) => {
+    if (days === null || days === undefined) return '#6c757d';
+    if (days <= 7) return '#198754';
+    if (days <= 14) return '#e65100';
+    return '#dc3545';
+  };
+
   const getPriorityColor = (priority) => {
     switch (priority) {
       case 'High': return '#7b1fa2';
@@ -243,6 +250,7 @@ function LeadsList() {
                   <th>
                     Callback Days
                   </th>
+                  <th>Last Contact</th>
                   <th onClick={() => toggleSort('contact_date')} style={{ cursor: 'pointer' }}>
                     Contact Date <FaSort />
                   </th>
@@ -308,6 +316,11 @@ function LeadsList() {
                           {formatTimeRange(lead.callback_time_from, lead.callback_time_to)}
                         </div>
                       )}
+                    </td>
+                    <td style={{ fontSize: '0.875rem', fontWeight: 600, color: getDaysColor(lead.days_since_last_contact) }}>
+                      {lead.days_since_last_contact !== null && lead.days_since_last_contact !== undefined
+                        ? `${lead.days_since_last_contact}d ago`
+                        : <span style={{ fontStyle: 'italic', fontWeight: 400, color: '#6c757d' }}>Never</span>}
                     </td>
                     <td style={{ fontSize: '0.875rem' }}>
                       {formatDate(lead.contact_date)}

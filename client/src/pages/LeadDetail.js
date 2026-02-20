@@ -15,7 +15,8 @@ import {
   FaComments,
   FaUser,
   FaCopy,
-  FaCheck
+  FaCheck,
+  FaExchangeAlt
 } from 'react-icons/fa';
 import { leadsApi, tasksApi, emailTemplatesApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
@@ -58,6 +59,7 @@ function LeadDetail() {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [activityFilter, setActivityFilter] = useState('All');
 
   const fetchLead = useCallback(async () => {
     try {
@@ -325,10 +327,73 @@ function LeadDetail() {
       'Email': <FaEnvelope />,
       'In-Person': <FaUser />,
       'Text': <FaComments />,
+      'Stage Change': <FaExchangeAlt />,
+      'Task': <FaCheck />,
       'Other': <FaHistory />
     };
     return icons[method] || <FaHistory />;
   };
+
+  const getDaysColor = (days) => {
+    if (days === null || days === undefined) return '#6c757d';
+    if (days <= 7) return '#198754';
+    if (days <= 14) return '#e65100';
+    return '#dc3545';
+  };
+
+  const getDaysBg = (days) => {
+    if (days === null || days === undefined) return '#e9ecef';
+    if (days <= 7) return '#d1e7dd';
+    if (days <= 14) return '#fff3e0';
+    return '#f8d7da';
+  };
+
+  // Build unified activity timeline
+  const activityTimeline = React.useMemo(() => {
+    if (!lead) return [];
+    const items = [];
+
+    // Add contact history entries
+    (lead.contact_history || []).forEach(h => {
+      const isStageChange = h.contact_method === 'Other' && h.notes && h.notes.startsWith('Stage changed');
+      items.push({
+        id: `h-${h.id}`,
+        type: isStageChange ? 'Stage Change' : (h.contact_method || 'Other'),
+        date: h.contact_date,
+        title: isStageChange
+          ? h.notes
+          : `${h.contact_method || 'Contact'}${h.contact_person ? ` with ${h.contact_person}` : ''}`,
+        notes: isStageChange ? null : h.notes,
+        outcome: h.outcome,
+        emailSubject: h.email_subject,
+        nextCallback: h.next_callback
+      });
+    });
+
+    // Add completed tasks
+    (lead.completed_tasks || []).forEach(t => {
+      items.push({
+        id: `t-${t.id}`,
+        type: 'Task',
+        date: t.completed_at,
+        title: `Task Completed: ${t.title}`,
+        notes: t.description,
+        outcome: null,
+        emailSubject: null,
+        nextCallback: null
+      });
+    });
+
+    // Sort by date descending
+    items.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return items;
+  }, [lead]);
+
+  const filteredTimeline = activityFilter === 'All'
+    ? activityTimeline
+    : activityTimeline.filter(item => item.type === activityFilter);
+
+  const activityFilterOptions = ['All', 'Phone', 'Email', 'Stage Change', 'Task', 'In-Person', 'Text'];
 
   if (loading) {
     return (
@@ -472,6 +537,22 @@ function LeadDetail() {
               <p style={{ color: '#2e7d32', fontWeight: 700, margin: '0.25rem 0 0', fontSize: '1.1rem' }}>
                 {formatCurrency(lead.deal_value)}/mo
               </p>
+            )}
+            {lead.days_since_last_contact !== undefined && (
+              <span style={{
+                display: 'inline-block',
+                marginTop: '0.25rem',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '50px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                background: getDaysBg(lead.days_since_last_contact),
+                color: getDaysColor(lead.days_since_last_contact)
+              }}>
+                {lead.days_since_last_contact !== null
+                  ? `${lead.days_since_last_contact}d since last contact`
+                  : 'Never contacted'}
+              </span>
             )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
@@ -672,33 +753,51 @@ function LeadDetail() {
             )}
           </div>
 
-          {/* Contact History */}
+          {/* Activity Timeline */}
           <div className="detail-section">
-            <h3><FaHistory /> Contact History</h3>
-            {lead.contact_history && lead.contact_history.length > 0 ? (
+            <h3><FaHistory /> Activity Timeline</h3>
+            <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+              {activityFilterOptions.map(opt => (
+                <button
+                  key={opt}
+                  onClick={() => setActivityFilter(opt)}
+                  style={{
+                    padding: '0.25rem 0.75rem',
+                    borderRadius: '50px',
+                    border: '1px solid',
+                    borderColor: activityFilter === opt ? '#2d5a27' : '#dee2e6',
+                    background: activityFilter === opt ? '#2d5a27' : 'white',
+                    color: activityFilter === opt ? 'white' : '#495057',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    cursor: 'pointer'
+                  }}
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            {filteredTimeline.length > 0 ? (
               <div className="history-list">
-                {lead.contact_history.map((history) => (
-                  <div key={history.id} className="history-item">
+                {filteredTimeline.map((item) => (
+                  <div key={item.id} className="history-item">
                     <div className="history-icon">
-                      {getMethodIcon(history.contact_method)}
+                      {getMethodIcon(item.type)}
                     </div>
                     <div className="history-content">
-                      <h4>
-                        {history.contact_method || 'Contact'}
-                        {history.contact_person && ` with ${history.contact_person}`}
-                      </h4>
-                      {history.email_subject && (
-                        <p style={{ fontWeight: 500, color: '#495057' }}>Subject: {history.email_subject}</p>
+                      <h4>{item.title}</h4>
+                      {item.emailSubject && (
+                        <p style={{ fontWeight: 500, color: '#495057' }}>Subject: {item.emailSubject}</p>
                       )}
-                      {history.notes && <p>{history.notes}</p>}
-                      {history.outcome && (
-                        <p><strong>Outcome:</strong> {history.outcome}</p>
+                      {item.notes && <p>{item.notes}</p>}
+                      {item.outcome && (
+                        <p><strong>Outcome:</strong> {item.outcome}</p>
                       )}
-                      {history.next_callback && (
-                        <p><strong>Next callback:</strong> {formatDateTime(history.next_callback)}</p>
+                      {item.nextCallback && (
+                        <p><strong>Next callback:</strong> {formatDateTime(item.nextCallback)}</p>
                       )}
                       <div className="history-meta">
-                        {formatDateTime(history.contact_date)}
+                        {formatDateTime(item.date)}
                       </div>
                     </div>
                   </div>
@@ -706,7 +805,9 @@ function LeadDetail() {
               </div>
             ) : (
               <p style={{ color: '#6c757d', fontStyle: 'italic' }}>
-                No contact history yet. Click "Log Contact" to add your first entry.
+                {activityFilter === 'All'
+                  ? 'No activity yet. Click "Log Contact" to add your first entry.'
+                  : `No ${activityFilter} activity found.`}
               </p>
             )}
           </div>

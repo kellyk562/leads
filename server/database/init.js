@@ -198,6 +198,7 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_email_templates_category ON email_templates(category)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_contact_history_contact_date ON contact_history(lead_id, contact_date DESC)`);
 
     // Seed default email templates (only if table is empty)
     const templateCount = await client.query('SELECT COUNT(*) as count FROM email_templates');

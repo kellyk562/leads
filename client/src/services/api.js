@@ -42,6 +42,9 @@ export const leadsApi = {
   // Get dashboard statistics
   getStats: () => api.get('/leads/stats'),
 
+  // Get analytics data
+  getAnalytics: () => api.get('/leads/analytics'),
+
   // Add contact history
   addHistory: (leadId, data) => api.post(`/leads/${leadId}/history`, data),
 

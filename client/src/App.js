@@ -11,6 +11,7 @@ import LeadDetail from './pages/LeadDetail';
 import Pipeline from './pages/Pipeline';
 import Tasks from './pages/Tasks';
 import EmailTemplates from './pages/EmailTemplates';
+import Analytics from './pages/Analytics';
 
 function AppHeader() {
   return (
@@ -25,6 +26,7 @@ function AppHeader() {
           <NavLink to="/pipeline">Pipeline</NavLink>
           <NavLink to="/tasks">Tasks</NavLink>
           <NavLink to="/templates">Templates</NavLink>
+          <NavLink to="/analytics">Analytics</NavLink>
           <NavLink to="/leads/new" className="add-lead-btn" title="Add Lead">
             <FaPlus />
           </NavLink>
@@ -46,6 +48,7 @@ function App() {
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/tasks" element={<Tasks />} />
             <Route path="/templates" element={<EmailTemplates />} />
+            <Route path="/analytics" element={<Analytics />} />
             <Route path="/leads/new" element={<LeadForm />} />
             <Route path="/leads/:id" element={<LeadDetail />} />
             <Route path="/leads/:id/edit" element={<LeadForm />} />

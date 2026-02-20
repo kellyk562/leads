@@ -21,24 +21,33 @@ router.get('/', async (req, res) => {
   try {
     const { search, priority, stage, sort = 'updated_at', order = 'DESC' } = req.query;
 
-    let sql = 'SELECT * FROM leads WHERE 1=1';
+    let sql = `SELECT l.*, sub.last_contact_date,
+      EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact
+      FROM leads l
+      LEFT JOIN (
+        SELECT lead_id, MAX(contact_date) AS last_contact_date
+        FROM contact_history
+        WHERE NOT (contact_method = 'Other' AND notes LIKE 'Stage changed%')
+        GROUP BY lead_id
+      ) sub ON sub.lead_id = l.id
+      WHERE 1=1`;
     const params = [];
     let paramIndex = 1;
 
     if (search) {
-      sql += ` AND (dispensary_name ILIKE $${paramIndex} OR contact_name ILIKE $${paramIndex} OR manager_name ILIKE $${paramIndex} OR owner_name ILIKE $${paramIndex} OR address ILIKE $${paramIndex} OR city ILIKE $${paramIndex})`;
+      sql += ` AND (l.dispensary_name ILIKE $${paramIndex} OR l.contact_name ILIKE $${paramIndex} OR l.manager_name ILIKE $${paramIndex} OR l.owner_name ILIKE $${paramIndex} OR l.address ILIKE $${paramIndex} OR l.city ILIKE $${paramIndex})`;
       params.push(`%${search}%`);
       paramIndex++;
     }
 
     if (priority && ['Low', 'Medium', 'High'].includes(priority)) {
-      sql += ` AND priority = $${paramIndex}`;
+      sql += ` AND l.priority = $${paramIndex}`;
       params.push(priority);
       paramIndex++;
     }
 
     if (stage && VALID_STAGES.includes(stage)) {
-      sql += ` AND stage = $${paramIndex}`;
+      sql += ` AND l.stage = $${paramIndex}`;
       params.push(stage);
       paramIndex++;
     }
@@ -47,7 +56,7 @@ router.get('/', async (req, res) => {
     const sortColumn = validSortColumns.includes(sort) ? sort : 'updated_at';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    sql += ` ORDER BY ${sortColumn} ${sortOrder}`;
+    sql += ` ORDER BY l.${sortColumn} ${sortOrder}`;
 
     const leads = await db.all(sql, params);
     res.json(leads);
@@ -157,6 +166,104 @@ router.get('/stats', async (req, res) => {
   }
 });
 
+// Get analytics data
+router.get('/analytics', async (req, res) => {
+  try {
+    const [
+      stageCounts,
+      avgTimeInStage,
+      leadsBySource,
+      leadsByPOS,
+      leadsByState,
+      weeklyNewLeads,
+      weeklyClosedWon,
+      staleLeads
+    ] = await Promise.all([
+      // 1. Stage counts (cumulative for funnel)
+      db.all(`SELECT stage, COUNT(*) as count FROM leads GROUP BY stage`),
+      // 2. Average time in each stage using stage-change history
+      db.all(`
+        WITH stage_changes AS (
+          SELECT lead_id, notes, contact_date,
+            LAG(contact_date) OVER (PARTITION BY lead_id ORDER BY contact_date) AS prev_date,
+            LAG(notes) OVER (PARTITION BY lead_id ORDER BY contact_date) AS prev_notes
+          FROM contact_history
+          WHERE contact_method = 'Other' AND notes LIKE 'Stage changed%'
+        )
+        SELECT
+          SUBSTRING(prev_notes FROM 'to "([^"]+)"') AS stage,
+          ROUND(AVG(EXTRACT(EPOCH FROM (contact_date - prev_date)) / 86400)::NUMERIC, 1) AS avg_days
+        FROM stage_changes
+        WHERE prev_date IS NOT NULL
+        GROUP BY SUBSTRING(prev_notes FROM 'to "([^"]+)"')
+        HAVING SUBSTRING(prev_notes FROM 'to "([^"]+)"') IS NOT NULL
+      `),
+      // 3. Leads by source
+      db.all(`SELECT COALESCE(source, 'Unknown') AS source, COUNT(*) as count FROM leads GROUP BY source ORDER BY count DESC`),
+      // 4. Leads by POS competitor
+      db.all(`SELECT COALESCE(current_pos_system, 'Unknown') AS pos, COUNT(*) as count FROM leads WHERE current_pos_system IS NOT NULL AND current_pos_system != '' GROUP BY current_pos_system ORDER BY count DESC`),
+      // 5. Leads by state
+      db.all(`SELECT COALESCE(state, 'Unknown') AS state, COUNT(*) as count FROM leads WHERE state IS NOT NULL AND state != '' GROUP BY state ORDER BY count DESC LIMIT 10`),
+      // 6. Weekly new leads (last 12 weeks)
+      db.all(`
+        SELECT DATE_TRUNC('week', created_at)::DATE AS week, COUNT(*) as count
+        FROM leads
+        WHERE created_at >= NOW() - INTERVAL '12 weeks'
+        GROUP BY DATE_TRUNC('week', created_at)
+        ORDER BY week
+      `),
+      // 7. Weekly closed won (last 12 weeks)
+      db.all(`
+        SELECT DATE_TRUNC('week', contact_date)::DATE AS week, COUNT(*) as count
+        FROM contact_history
+        WHERE contact_method = 'Other' AND notes LIKE '%to "Closed Won"%'
+          AND contact_date >= NOW() - INTERVAL '12 weeks'
+        GROUP BY DATE_TRUNC('week', contact_date)
+        ORDER BY week
+      `),
+      // 8. Stale leads (no activity in 14+ days, excluding Closed Won/Lost)
+      db.all(`
+        SELECT l.id, l.dispensary_name, l.stage, l.deal_value,
+          MAX(ch.contact_date) AS last_activity,
+          EXTRACT(DAY FROM NOW() - COALESCE(MAX(ch.contact_date), l.created_at))::INTEGER AS days_inactive
+        FROM leads l
+        LEFT JOIN contact_history ch ON ch.lead_id = l.id
+        WHERE l.stage NOT IN ('Closed Won', 'Closed Lost')
+        GROUP BY l.id, l.dispensary_name, l.stage, l.deal_value, l.created_at
+        HAVING COALESCE(MAX(ch.contact_date), l.created_at) < NOW() - INTERVAL '14 days'
+        ORDER BY days_inactive DESC
+      `)
+    ]);
+
+    // Build cumulative funnel counts
+    const stageOrder = ['New Lead', 'Contacted', 'Demo Scheduled', 'Demo Completed', 'Proposal Sent', 'Negotiating', 'Closed Won', 'Closed Lost'];
+    const stageCountMap = {};
+    stageCounts.forEach(r => { stageCountMap[r.stage] = parseInt(r.count); });
+    const funnel = stageOrder.filter(s => s !== 'Closed Lost').map(stage => {
+      const idx = stageOrder.indexOf(stage);
+      let cumulative = 0;
+      for (let i = idx; i < stageOrder.length; i++) {
+        cumulative += (stageCountMap[stageOrder[i]] || 0);
+      }
+      return { stage, count: cumulative };
+    });
+
+    res.json({
+      funnel,
+      avgTimeInStage,
+      leadsBySource,
+      leadsByPOS,
+      leadsByState,
+      weeklyNewLeads,
+      weeklyClosedWon,
+      staleLeads
+    });
+  } catch (error) {
+    console.error('Error fetching analytics:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
 // Get single lead by ID
 router.get('/:id', param('id').isInt(), async (req, res) => {
   try {
@@ -171,12 +278,23 @@ router.get('/:id', param('id').isInt(), async (req, res) => {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    // Get contact history
-    const history = await db.all(`
-      SELECT * FROM contact_history WHERE lead_id = $1 ORDER BY contact_date DESC
-    `, [req.params.id]);
+    // Get contact history, days since last contact, and completed tasks in parallel
+    const [history, lastContactRow, completedTasks] = await Promise.all([
+      db.all(`SELECT * FROM contact_history WHERE lead_id = $1 ORDER BY contact_date DESC`, [req.params.id]),
+      db.get(`
+        SELECT EXTRACT(DAY FROM NOW() - MAX(contact_date))::INTEGER AS days_since_last_contact
+        FROM contact_history
+        WHERE lead_id = $1 AND NOT (contact_method = 'Other' AND notes LIKE 'Stage changed%')
+      `, [req.params.id]),
+      db.all(`SELECT * FROM tasks WHERE lead_id = $1 AND status = 'completed' ORDER BY completed_at DESC`, [req.params.id])
+    ]);
 
-    res.json({ ...lead, contact_history: history });
+    res.json({
+      ...lead,
+      contact_history: history,
+      days_since_last_contact: lastContactRow?.days_since_last_contact ?? null,
+      completed_tasks: completedTasks
+    });
   } catch (error) {
     console.error('Error fetching lead:', error);
     res.status(500).json({ error: 'Failed to fetch lead' });

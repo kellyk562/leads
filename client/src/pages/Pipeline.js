@@ -128,6 +128,31 @@ function Pipeline() {
                               {formatCurrency(lead.deal_value)}
                             </span>
                           )}
+                          {lead.days_since_last_contact !== null && lead.days_since_last_contact !== undefined ? (
+                            <span style={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 600,
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '50px',
+                              background: lead.days_since_last_contact <= 7 ? '#d1e7dd'
+                                : lead.days_since_last_contact <= 14 ? '#fff3e0' : '#f8d7da',
+                              color: lead.days_since_last_contact <= 7 ? '#198754'
+                                : lead.days_since_last_contact <= 14 ? '#e65100' : '#dc3545'
+                            }}>
+                              {lead.days_since_last_contact}d
+                            </span>
+                          ) : (
+                            <span style={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 600,
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '50px',
+                              background: '#e9ecef',
+                              color: '#6c757d'
+                            }}>
+                              New
+                            </span>
+                          )}
                         </div>
                       </Link>
                       <div className="pipeline-card-actions">
