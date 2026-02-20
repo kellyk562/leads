@@ -741,7 +741,8 @@ function LeadDetail() {
             {tasks.length > 0 ? (
               <div className="task-list">
                 {tasks.map(task => {
-                  const taskDate = task.due_date ? new Date(task.due_date + 'T00:00:00') : null;
+                  const dueDateStr = task.due_date ? task.due_date.split('T')[0] : null;
+                  const taskDate = dueDateStr ? new Date(dueDateStr + 'T00:00:00') : null;
                   const overdue = task.status === 'pending' && taskDate && isPast(taskDate) && !isToday(taskDate);
                   return (
                     <div key={task.id} className="task-item" style={{ borderLeftColor: overdue ? '#dc3545' : task.status === 'completed' ? '#28a745' : '#f5a623' }}>
@@ -757,7 +758,7 @@ function LeadDetail() {
                         </span>
                         <div className="task-meta">
                           <span style={{ color: overdue ? '#dc3545' : '#6c757d' }}>
-                            {task.due_date ? format(new Date(task.due_date + 'T00:00:00'), 'MMM d, yyyy') : ''}
+                            {taskDate ? format(taskDate, 'MMM d, yyyy') : ''}
                             {task.due_time ? ` at ${task.due_time}` : ''}
                           </span>
                           <span className={`priority-badge priority-${task.priority?.toLowerCase()}`} style={{ fontSize: '0.625rem', padding: '0.125rem 0.5rem' }}>

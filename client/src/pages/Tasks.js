@@ -66,7 +66,8 @@ function Tasks() {
       if (task.status === 'completed') {
         completed.push(task);
       } else {
-        const taskDate = task.due_date ? new Date(task.due_date + 'T00:00:00') : null;
+        const dueDateStr = task.due_date ? task.due_date.split('T')[0] : null;
+        const taskDate = dueDateStr ? new Date(dueDateStr + 'T00:00:00') : null;
         if (taskDate && isPast(taskDate) && !isToday(taskDate)) {
           overdue.push(task);
         } else if (taskDate && isToday(taskDate)) {
@@ -83,7 +84,7 @@ function Tasks() {
   const formatDate = (dateString) => {
     if (!dateString) return '';
     try {
-      return format(new Date(dateString + 'T00:00:00'), 'MMM d, yyyy');
+      return format(new Date(dateString.split('T')[0] + 'T00:00:00'), 'MMM d, yyyy');
     } catch {
       return '';
     }

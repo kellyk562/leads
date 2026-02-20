@@ -168,7 +168,7 @@ function Dashboard() {
                     </Link>
                     <span style={{ color: task._isOverdue ? '#dc3545' : '#6c757d', fontSize: '0.8125rem' }}>
                       {task._isOverdue && <FaExclamationTriangle size={10} style={{ marginRight: '0.25rem' }} />}
-                      {task.due_date ? format(new Date(task.due_date + 'T00:00:00'), 'MMM d') : ''}
+                      {task.due_date ? format(new Date(task.due_date.split('T')[0] + 'T00:00:00'), 'MMM d') : ''}
                       {task.due_time ? ` at ${task.due_time}` : ''}
                     </span>
                   </div>
