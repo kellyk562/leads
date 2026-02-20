@@ -84,4 +84,11 @@ export const emailTemplatesApi = {
   delete: (id) => api.delete(`/email-templates/${id}`),
 };
 
+// Email API (Gmail SMTP)
+export const emailApi = {
+  getStatus: () => api.get('/email/status'),
+  testConnection: () => api.post('/email/test'),
+  send: (data) => api.post('/email/send', data),
+};
+
 export default api;

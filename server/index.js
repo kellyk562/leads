@@ -29,9 +29,11 @@ async function startServer() {
     const leadsRoutes = require('./routes/leads');
     const tasksRoutes = require('./routes/tasks');
     const emailTemplatesRoutes = require('./routes/emailTemplates');
+    const emailRoutes = require('./routes/email');
     app.use('/api/leads', leadsRoutes);
     app.use('/api/tasks', tasksRoutes);
     app.use('/api/email-templates', emailTemplatesRoutes);
+    app.use('/api/email', emailRoutes);
 
     // Serve static files from React app in production
     if (process.env.NODE_ENV === 'production') {

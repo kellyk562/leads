@@ -16,9 +16,10 @@ import {
   FaUser,
   FaCopy,
   FaCheck,
-  FaExchangeAlt
+  FaExchangeAlt,
+  FaPaperPlane
 } from 'react-icons/fa';
-import { leadsApi, tasksApi, emailTemplatesApi } from '../services/api';
+import { leadsApi, tasksApi, emailTemplatesApi, emailApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 
 const formatCurrency = (value) => {
@@ -59,6 +60,8 @@ function LeadDetail() {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [emailConfigured, setEmailConfigured] = useState(null);
+  const [sendingEmail, setSendingEmail] = useState(false);
   const [activityFilter, setActivityFilter] = useState('All');
 
   const fetchLead = useCallback(async () => {
@@ -86,6 +89,7 @@ function LeadDetail() {
   useEffect(() => {
     fetchLead();
     fetchTasks();
+    emailApi.getStatus().then(res => setEmailConfigured(res.data.configured)).catch(() => setEmailConfigured(false));
   }, [fetchLead, fetchTasks]);
 
   const handleDelete = async () => {
@@ -266,6 +270,32 @@ function LeadDetail() {
       toast.error('Failed to log email');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleSendEmail = async () => {
+    if (!lead.contact_email) {
+      toast.error('This lead has no email address on file');
+      return;
+    }
+    setSendingEmail(true);
+    try {
+      await emailApi.send({
+        leadId: parseInt(id),
+        to: lead.contact_email,
+        subject: emailSubject,
+        body: emailBody,
+        templateId: selectedTemplate?.id || null,
+        templateName: selectedTemplate?.name || null,
+      });
+      toast.success('Email sent successfully!');
+      setShowEmailModal(false);
+      fetchLead();
+    } catch (error) {
+      const msg = error.response?.data?.error || 'Failed to send email';
+      toast.error(msg);
+    } finally {
+      setSendingEmail(false);
     }
   };
 
@@ -1058,6 +1088,22 @@ function LeadDetail() {
                 </>
               ) : (
                 <>
+                  {!lead.contact_email && (
+                    <div style={{
+                      background: '#fff3cd', border: '1px solid #ffc107', borderRadius: '8px',
+                      padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.875rem', color: '#856404'
+                    }}>
+                      This lead has no email address on file. Add one via Edit to send emails directly.
+                    </div>
+                  )}
+                  {emailConfigured === false && (
+                    <div style={{
+                      background: '#f8d7da', border: '1px solid #dc3545', borderRadius: '8px',
+                      padding: '0.75rem 1rem', marginBottom: '1rem', fontSize: '0.875rem', color: '#721c24'
+                    }}>
+                      Gmail SMTP is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your .env file to send emails directly.
+                    </div>
+                  )}
                   <div className="form-group" style={{ marginBottom: '1rem' }}>
                     <label>To</label>
                     <input
@@ -1096,14 +1142,24 @@ function LeadDetail() {
                 {emailStep === 2 && (
                   <>
                     <button className="btn btn-outline" onClick={handleCopyEmail}>
-                      <FaCopy /> Copy to Clipboard
+                      <FaCopy /> Copy
                     </button>
-                    <button className="btn btn-secondary" onClick={handleOpenMailto}>
-                      <FaEnvelope /> Open in Email Client
+                    <button className="btn btn-outline" onClick={handleOpenMailto}>
+                      <FaEnvelope /> Mailto
                     </button>
-                    <button className="btn btn-primary" onClick={handleLogEmail} disabled={submitting}>
-                      {submitting ? 'Logging...' : 'Log & Close'}
+                    <button className="btn btn-secondary" onClick={handleLogEmail} disabled={submitting}>
+                      {submitting ? 'Logging...' : 'Log Only'}
                     </button>
+                    {emailConfigured && lead.contact_email && (
+                      <button
+                        className="btn btn-primary"
+                        onClick={handleSendEmail}
+                        disabled={sendingEmail}
+                        style={{ background: '#198754', borderColor: '#198754' }}
+                      >
+                        <FaPaperPlane /> {sendingEmail ? 'Sending...' : 'Send Email'}
+                      </button>
+                    )}
                   </>
                 )}
                 {emailStep === 1 && (
