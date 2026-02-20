@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import {
   FaPhoneAlt,
   FaCalendarAlt,
@@ -8,13 +8,8 @@ import {
   FaUserPlus
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { useUsers } from '../contexts/UserContext';
 
 function Dashboard() {
-  const { username } = useParams();
-  const { getUserIdByName } = useUsers();
-  const userId = getUserIdByName(username);
-
   const [todayCallbacks, setTodayCallbacks] = useState([]);
   const [allLeads, setAllLeads] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -26,8 +21,8 @@ function Dashboard() {
     try {
       setLoading(true);
       const [todayRes, leadsRes] = await Promise.all([
-        leadsApi.getTodayCallbacks(userId),
-        leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' }, userId)
+        leadsApi.getTodayCallbacks(),
+        leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' })
       ]);
       setTodayCallbacks(todayRes.data);
       setAllLeads(leadsRes.data.slice(0, 5)); // Get 5 most recent leads
@@ -36,7 +31,7 @@ function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, []);
 
   useEffect(() => {
     fetchDashboardData();
@@ -91,7 +86,7 @@ function Dashboard() {
           <div className="callback-list">
             {todayCallbacks.filter(lead => (lead.priority === 'Medium' || lead.priority === 'High') && !lead.callback_date).map((lead) => (
               <Link
-                to={`/${username}/leads/${lead.id}`}
+                to={`/leads/${lead.id}`}
                 key={lead.id}
                 className="callback-item"
                 style={{ textDecoration: 'none', color: 'inherit', borderLeftColor: getPriorityColor(lead.priority) }}
@@ -125,7 +120,7 @@ function Dashboard() {
           <div className="callback-list">
             {allLeads.map((lead) => (
               <Link
-                to={`/${username}/leads/${lead.id}`}
+                to={`/leads/${lead.id}`}
                 key={lead.id}
                 className="callback-item"
                 style={{ textDecoration: 'none', color: 'inherit', borderLeftColor: getPriorityColor(lead.priority) }}
@@ -144,7 +139,7 @@ function Dashboard() {
             ))}
           </div>
           <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-            <Link to={`/${username}/leads`} className="btn btn-outline">
+            <Link to="/leads" className="btn btn-outline">
               View All Leads <FaArrowRight />
             </Link>
           </div>
@@ -155,10 +150,10 @@ function Dashboard() {
       <div className="callbacks-section">
         <h2>Quick Actions</h2>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1rem' }}>
-          <Link to={`/${username}/leads/new`} className="btn btn-primary">
+          <Link to="/leads/new" className="btn btn-primary">
             <FaUserPlus /> Add New Lead
           </Link>
-          <Link to={`/${username}/leads`} className="btn btn-outline">
+          <Link to="/leads" className="btn btn-outline">
             View All Leads
           </Link>
         </div>

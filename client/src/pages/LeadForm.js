@@ -3,7 +3,6 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaSave, FaTimes, FaArrowLeft } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { useUsers } from '../contexts/UserContext';
 
 const initialFormState = {
   contact_date: new Date().toISOString().split('T')[0],
@@ -39,10 +38,8 @@ const BUSINESS_HOURS = [
 ];
 
 function LeadForm() {
-  const { id, username } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
-  const { getUserIdByName } = useUsers();
-  const userId = getUserIdByName(username);
   const isEditing = Boolean(id);
 
   const [formData, setFormData] = useState(initialFormState);
@@ -130,11 +127,11 @@ function LeadForm() {
     } catch (error) {
       console.error('Error fetching lead:', error);
       toast.error('Failed to load lead data');
-      navigate(`/${username}/leads`);
+      navigate('/leads');
     } finally {
       setFetching(false);
     }
-  }, [id, navigate, username]);
+  }, [id, navigate]);
 
   useEffect(() => {
     if (isEditing) {
@@ -234,10 +231,10 @@ function LeadForm() {
         await leadsApi.update(id, formData);
         toast.success('Lead updated successfully');
       } else {
-        await leadsApi.create(formData, userId);
+        await leadsApi.create(formData);
         toast.success('Lead created successfully');
       }
-      navigate(`/${username}/leads`);
+      navigate('/leads');
     } catch (error) {
       console.error('Error saving lead:', error);
       const message = error.response?.data?.error || 'Failed to save lead';
@@ -258,7 +255,7 @@ function LeadForm() {
   return (
     <div className="lead-form-page">
       <div style={{ marginBottom: '1rem' }}>
-        <Link to={`/${username}/leads`} className="btn btn-outline">
+        <Link to="/leads" className="btn btn-outline">
           <FaArrowLeft /> Back to Leads
         </Link>
       </div>
@@ -526,7 +523,7 @@ function LeadForm() {
         </div>
 
         <div className="form-actions">
-          <Link to={`/${username}/leads`} className="btn btn-outline">
+          <Link to="/leads" className="btn btn-outline">
             <FaTimes /> Cancel
           </Link>
           <button type="submit" className="btn btn-primary" disabled={loading}>

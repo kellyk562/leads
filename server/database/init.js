@@ -33,9 +33,9 @@ async function initDatabase() {
       )
     `);
 
-    // Seed Ken and Jack users
+    // Seed Ken user
     await client.query(`
-      INSERT INTO users (id, name) VALUES (1, 'ken'), (2, 'jack')
+      INSERT INTO users (id, name) VALUES (1, 'ken')
       ON CONFLICT (name) DO NOTHING
     `);
 

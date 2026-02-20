@@ -19,7 +19,7 @@ import {
 import { leadsApi } from '../services/api';
 
 function LeadDetail() {
-  const { id, username } = useParams();
+  const { id } = useParams();
   const navigate = useNavigate();
 
   const [lead, setLead] = useState(null);
@@ -43,11 +43,11 @@ function LeadDetail() {
     } catch (error) {
       console.error('Error fetching lead:', error);
       toast.error('Failed to load lead');
-      navigate(`/${username}/leads`);
+      navigate(`/leads`);
     } finally {
       setLoading(false);
     }
-  }, [id, navigate, username]);
+  }, [id, navigate]);
 
   useEffect(() => {
     fetchLead();
@@ -57,7 +57,7 @@ function LeadDetail() {
     try {
       await leadsApi.delete(id);
       toast.success('Lead deleted successfully');
-      navigate(`/${username}/leads`);
+      navigate(`/leads`);
     } catch (error) {
       console.error('Error deleting lead:', error);
       toast.error('Failed to delete lead');
@@ -183,7 +183,7 @@ function LeadDetail() {
     return (
       <div className="empty-state">
         <h3>Lead not found</h3>
-        <Link to={`/${username}/leads`} className="btn btn-primary">
+        <Link to={`/leads`} className="btn btn-primary">
           Back to Leads
         </Link>
       </div>
@@ -193,7 +193,7 @@ function LeadDetail() {
   return (
     <div className="lead-detail-page">
       <div style={{ marginBottom: '1rem' }}>
-        <Link to={`/${username}/leads`} className="btn btn-outline">
+        <Link to={`/leads`} className="btn btn-outline">
           <FaArrowLeft /> Back to Leads
         </Link>
       </div>
@@ -266,7 +266,7 @@ function LeadDetail() {
             >
               <FaPlus /> Log Contact
             </button>
-            <Link to={`/${username}/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
+            <Link to={`/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
               <FaEdit /> Edit
             </Link>
             <button
