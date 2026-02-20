@@ -647,14 +647,11 @@ function LeadDetail() {
             <h3><FaUser /> Contact Information</h3>
             <div className="detail-grid">
               <div className="detail-item">
-                <label>Initial Contact</label>
-                <span>
-                  {lead.contact_name || '-'}
-                  {lead.contact_position && <span style={{ color: '#6c757d' }}> ({lead.contact_position})</span>}
-                </span>
+                <label>Reference</label>
+                <span>{lead.contact_name || '-'}</span>
               </div>
               <div className="detail-item">
-                <label>Recommended Contact</label>
+                <label>Name</label>
                 <span>
                   {lead.manager_name || '-'}
                   {lead.owner_name && <span style={{ color: '#6c757d' }}> ({lead.owner_name})</span>}
@@ -680,7 +677,7 @@ function LeadDetail() {
                 </span>
               </div>
               <div className="detail-item">
-                <label>Recommended Contact Phone</label>
+                <label>Phone</label>
                 <span>
                   {lead.contact_number ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -699,7 +696,7 @@ function LeadDetail() {
                 </span>
               </div>
               <div className="detail-item">
-                <label>Recommended Contact Email</label>
+                <label>Email</label>
                 <span>
                   {lead.contact_email ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

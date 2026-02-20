@@ -377,7 +377,7 @@ function LeadForm() {
             <h3>Contact Information</h3>
             <div className="form-grid">
               <div className="form-group">
-                <label>Initial Contact</label>
+                <label>Reference</label>
                 <input
                   type="text"
                   name="contact_name"
@@ -388,18 +388,7 @@ function LeadForm() {
               </div>
 
               <div className="form-group">
-                <label>Initial Contact Role</label>
-                <select name="contact_position" value={formData.contact_position} onChange={handleChange}>
-                  <option value="">Select position...</option>
-                  <option value="Security">Security</option>
-                  <option value="Budtender">Budtender</option>
-                  <option value="Manager">Manager</option>
-                  <option value="Owner">Owner</option>
-                </select>
-              </div>
-
-              <div className="form-group">
-                <label>Recommended Contact</label>
+                <label>Name</label>
                 <input
                   type="text"
                   name="manager_name"
@@ -410,7 +399,7 @@ function LeadForm() {
               </div>
 
               <div className="form-group">
-                <label>Recommended Contact Role</label>
+                <label>Role</label>
                 <select name="owner_name" value={formData.owner_name} onChange={handleChange}>
                   <option value="">Select position...</option>
                   <option value="Manager">Manager</option>
@@ -419,7 +408,7 @@ function LeadForm() {
               </div>
 
               <div className="form-group">
-                <label>Recommended Contact Phone</label>
+                <label>Phone</label>
                 <input
                   type="tel"
                   name="contact_number"
@@ -430,7 +419,7 @@ function LeadForm() {
               </div>
 
               <div className="form-group">
-                <label>Recommended Contact Email</label>
+                <label>Email</label>
                 <input
                   type="email"
                   name="contact_email"
