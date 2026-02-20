@@ -35,24 +35,24 @@ router.post('/send', [
   body('subject').notEmpty().trim().withMessage('Subject is required'),
   body('body').notEmpty().withMessage('Body is required'),
 ], async (req, res) => {
-  if (!emailService.isConfigured()) {
-    return res.status(503).json({ error: 'Gmail SMTP is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env' });
-  }
-
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
-
-  const { leadId, to, subject, body: emailBody, templateId, templateName } = req.body;
-
-  // Verify lead exists
-  const lead = await db.get('SELECT * FROM leads WHERE id = $1', [leadId]);
-  if (!lead) {
-    return res.status(404).json({ error: 'Lead not found' });
-  }
-
   try {
+    if (!emailService.isConfigured()) {
+      return res.status(503).json({ error: 'Gmail SMTP is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to .env' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { leadId, to, subject, body: emailBody, templateId, templateName } = req.body;
+
+    // Verify lead exists
+    const lead = await db.get('SELECT * FROM leads WHERE id = $1', [leadId]);
+    if (!lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
     const info = await emailService.sendEmail({ to, subject, text: emailBody });
 
     // Auto-log to contact history
