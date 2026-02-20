@@ -25,7 +25,6 @@ function LeadsList() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [priorityFilter, setPriorityFilter] = useState(searchParams.get('priority') || '');
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
@@ -41,7 +40,6 @@ function LeadsList() {
         order: sortOrder,
       };
       if (search) params.search = search;
-      if (priorityFilter) params.priority = priorityFilter;
       if (stageFilter) params.stage = stageFilter;
 
       const response = await leadsApi.getAll(params);
@@ -52,7 +50,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, priorityFilter, stageFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -61,16 +59,15 @@ function LeadsList() {
   useEffect(() => {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
-    if (priorityFilter) params.set('priority', priorityFilter);
     if (stageFilter) params.set('stage', stageFilter);
     setSearchParams(params);
-  }, [search, priorityFilter, stageFilter, setSearchParams]);
+  }, [search, stageFilter, setSearchParams]);
 
   // Clear selection on filter change
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAll(false);
-  }, [search, priorityFilter, stageFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, sortBy, sortOrder]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -103,20 +100,6 @@ function LeadsList() {
     } catch (error) {
       console.error('Error bulk updating stage:', error);
       toast.error('Failed to update stages');
-    }
-  };
-
-  const handleBulkPriority = async (priority) => {
-    const ids = [...selectedIds];
-    try {
-      await leadsApi.bulkUpdatePriority(ids, priority);
-      toast.success(`Updated ${ids.length} leads to "${priority}" priority`);
-      setSelectedIds(new Set());
-      setSelectAll(false);
-      fetchLeads();
-    } catch (error) {
-      console.error('Error bulk updating priority:', error);
-      toast.error('Failed to update priorities');
     }
   };
 
@@ -179,15 +162,6 @@ function LeadsList() {
     return '#dc3545';
   };
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High': return '#7b1fa2';
-      case 'Medium': return '#e65100';
-      case 'Low': return '#2e7d32';
-      default: return '#e65100';
-    }
-  };
-
   const toggleSort = (column) => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'ASC' ? 'DESC' : 'ASC');
@@ -236,17 +210,6 @@ function LeadsList() {
 
           <select
             className="filter-select"
-            value={priorityFilter}
-            onChange={(e) => setPriorityFilter(e.target.value)}
-          >
-            <option value="">All Priorities</option>
-            <option value="High">High Priority</option>
-            <option value="Medium">Medium Priority</option>
-            <option value="Low">Low Priority</option>
-          </select>
-
-          <select
-            className="filter-select"
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
           >
@@ -270,7 +233,6 @@ function LeadsList() {
             <option value="created_at-ASC">Oldest First</option>
             <option value="dispensary_name-ASC">Name A-Z</option>
             <option value="dispensary_name-DESC">Name Z-A</option>
-            <option value="priority-DESC">Priority (High to Low)</option>
             <option value="deal_value-DESC">Highest Value</option>
           </select>
         </div>
@@ -338,12 +300,9 @@ function LeadsList() {
                       />
                     </td>
                     <td>
-                      <Link to={`/leads/${lead.id}`} style={{ fontWeight: 600, color: getPriorityColor(lead.priority) }}>
+                      <Link to={`/leads/${lead.id}`} style={{ fontWeight: 600, color: 'var(--primary-color)' }}>
                         {lead.dispensary_name}
                       </Link>
-                      <span className={`priority-badge priority-${lead.priority?.toLowerCase()}`} style={{ marginLeft: '0.5rem' }}>
-                        {lead.priority || 'Medium'}
-                      </span>
                     </td>
                     <td>
                       <span
@@ -448,16 +407,6 @@ function LeadsList() {
             >
               <option value="" disabled>Change Stage...</option>
               {STAGES.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <select
-              defaultValue=""
-              onChange={(e) => { if (e.target.value) handleBulkPriority(e.target.value); e.target.value = ''; }}
-              style={{ padding: '0.375rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '0.875rem' }}
-            >
-              <option value="" disabled>Change Priority...</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
             </select>
             <button
               className="btn btn-sm"

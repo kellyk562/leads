@@ -87,15 +87,6 @@ function Dashboard() {
     return '';
   };
 
-  const getPriorityColor = (priority) => {
-    switch (priority) {
-      case 'High': return '#7b1fa2';
-      case 'Medium': return '#e65100';
-      case 'Low': return '#2e7d32';
-      default: return '#e65100';
-    }
-  };
-
   if (loading) {
     return (
       <div className="loading">
@@ -110,16 +101,16 @@ function Dashboard() {
       <div className="callbacks-section">
         <h2>
           <FaPhoneAlt />
-          {todayDay}'s Callbacks ({todayCallbacks.filter(lead => (lead.priority === 'Medium' || lead.priority === 'High') && !lead.callback_date).length})
+          {todayDay}'s Callbacks ({todayCallbacks.filter(lead => !lead.callback_date).length})
         </h2>
-        {todayCallbacks.filter(lead => (lead.priority === 'Medium' || lead.priority === 'High') && !lead.callback_date).length > 0 ? (
+        {todayCallbacks.filter(lead => !lead.callback_date).length > 0 ? (
           <div className="callback-list">
-            {todayCallbacks.filter(lead => (lead.priority === 'Medium' || lead.priority === 'High') && !lead.callback_date).map((lead) => (
+            {todayCallbacks.filter(lead => !lead.callback_date).map((lead) => (
               <Link
                 to={`/leads/${lead.id}`}
                 key={lead.id}
                 className="callback-item"
-                style={{ textDecoration: 'none', color: 'inherit', borderLeftColor: getPriorityColor(lead.priority) }}
+                style={{ textDecoration: 'none', color: 'inherit' }}
               >
                 <div className="callback-info">
                   <h4>{lead.dispensary_name}</h4>
@@ -197,7 +188,7 @@ function Dashboard() {
                 to={`/leads/${lead.id}`}
                 key={lead.id}
                 className="callback-item"
-                style={{ textDecoration: 'none', color: 'inherit', borderLeftColor: getPriorityColor(lead.priority) }}
+                style={{ textDecoration: 'none', color: 'inherit' }}
               >
                 <div className="callback-info">
                   <h4>{lead.dispensary_name}</h4>

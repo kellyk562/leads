@@ -60,8 +60,6 @@ export const leadsApi = {
   // Bulk update stage
   bulkUpdateStage: (ids, stage) => api.patch('/leads/bulk/stage', { ids, stage }),
 
-  // Bulk update priority
-  bulkUpdatePriority: (ids, priority) => api.patch('/leads/bulk/priority', { ids, priority }),
 };
 
 // Tasks API

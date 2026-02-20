@@ -11,7 +11,6 @@ const validateLead = [
   body('dispensary_name').notEmpty().trim().withMessage('Dispensary name is required'),
   body('contact_date').notEmpty().withMessage('Contact date is required'),
   body('contact_email').optional({ values: 'falsy' }).isEmail().withMessage('Invalid email format'),
-  body('priority').optional().isIn(['Low', 'Medium', 'High']),
   body('stage').optional().isIn(VALID_STAGES),
   body('deal_value').optional({ values: 'falsy' }).isNumeric(),
 ];
@@ -19,7 +18,7 @@ const validateLead = [
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, priority, stage, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, stage, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = `SELECT l.*, sub.last_contact_date,
       EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact
@@ -40,19 +39,13 @@ router.get('/', async (req, res) => {
       paramIndex++;
     }
 
-    if (priority && ['Low', 'Medium', 'High'].includes(priority)) {
-      sql += ` AND l.priority = $${paramIndex}`;
-      params.push(priority);
-      paramIndex++;
-    }
-
     if (stage && VALID_STAGES.includes(stage)) {
       sql += ` AND l.stage = $${paramIndex}`;
       params.push(stage);
       paramIndex++;
     }
 
-    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'priority', 'stage', 'deal_value'];
+    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value'];
     const sortColumn = validSortColumns.includes(sort) ? sort : 'updated_at';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
@@ -76,7 +69,7 @@ router.get('/callbacks/today', async (req, res) => {
     const sql = `
       SELECT * FROM leads
       WHERE callback_days ILIKE $1
-      ORDER BY priority DESC, dispensary_name ASC
+      ORDER BY dispensary_name ASC
     `;
 
     const leads = await db.all(sql, [`%${todayDay}%`]);
@@ -93,7 +86,7 @@ router.get('/callbacks/upcoming', async (req, res) => {
     const sql = `
       SELECT * FROM leads
       WHERE callback_days IS NOT NULL AND callback_days != '[]' AND callback_days != ''
-      ORDER BY priority DESC, dispensary_name ASC
+      ORDER BY dispensary_name ASC
     `;
 
     const leads = await db.all(sql);
@@ -433,31 +426,6 @@ router.patch('/bulk/stage', async (req, res) => {
   }
 });
 
-// Bulk update priority
-router.patch('/bulk/priority', async (req, res) => {
-  try {
-    const { ids, priority } = req.body;
-
-    if (!Array.isArray(ids) || ids.length === 0) {
-      return res.status(400).json({ error: 'ids array is required' });
-    }
-
-    if (!['Low', 'Medium', 'High'].includes(priority)) {
-      return res.status(400).json({ error: 'Invalid priority' });
-    }
-
-    const result = await db.run(
-      `UPDATE leads SET priority = $1, updated_at = CURRENT_TIMESTAMP WHERE id = ANY($2::int[])`,
-      [priority, ids]
-    );
-
-    res.json({ updated: result.changes });
-  } catch (error) {
-    console.error('Error bulk updating priority:', error);
-    res.status(500).json({ error: 'Failed to bulk update priority' });
-  }
-});
-
 // Get single lead by ID
 router.get('/:id', param('id').isInt(), async (req, res) => {
   try {
@@ -788,7 +756,7 @@ router.get('/export/csv', async (req, res) => {
       'Dispensary Phone', 'Reference', 'Name',
       'Role', 'Phone', 'Email', 'Website',
       'Current POS', 'Deal Value', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
-      'Priority', 'Stage', 'Callback Date', 'Created At', 'Updated At'
+      'Stage', 'Callback Date', 'Created At', 'Updated At'
     ];
 
     // Convert leads to CSV rows
@@ -813,7 +781,6 @@ router.get('/export/csv', async (req, res) => {
       `"${(lead.callback_days || '').replace(/"/g, '""')}"`,
       lead.callback_time_from || '',
       lead.callback_time_to || '',
-      lead.priority || '',
       lead.stage || 'New Lead',
       lead.callback_date || '',
       lead.created_at || '',

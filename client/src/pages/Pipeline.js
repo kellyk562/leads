@@ -118,11 +118,6 @@ function Pipeline() {
                           <div className="pipeline-card-contact">{lead.manager_name}</div>
                         )}
                         <div className="pipeline-card-meta">
-                          {lead.priority && (
-                            <span className={`priority-badge priority-${lead.priority.toLowerCase()}`}>
-                              {lead.priority}
-                            </span>
-                          )}
                           {lead.deal_value && (
                             <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#2e7d32' }}>
                               {formatCurrency(lead.deal_value)}

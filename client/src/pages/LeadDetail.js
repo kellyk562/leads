@@ -37,7 +37,6 @@ function LeadDetail() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [showTaskModal, setShowTaskModal] = useState(false);
   const [tasks, setTasks] = useState([]);
-  const [showPriorityDropdown, setShowPriorityDropdown] = useState(false);
   const [showStageDropdown, setShowStageDropdown] = useState(false);
   const [taskForm, setTaskForm] = useState({
     title: '',
@@ -100,18 +99,6 @@ function LeadDetail() {
     } catch (error) {
       console.error('Error deleting lead:', error);
       toast.error('Failed to delete lead');
-    }
-  };
-
-  const handlePriorityChange = async (newPriority) => {
-    try {
-      await leadsApi.update(id, { ...lead, priority: newPriority });
-      setLead(prev => ({ ...prev, priority: newPriority }));
-      setShowPriorityDropdown(false);
-      toast.success(`Priority updated to ${newPriority}`);
-    } catch (error) {
-      console.error('Error updating priority:', error);
-      toast.error('Failed to update priority');
     }
   };
 
@@ -464,7 +451,7 @@ function LeadDetail() {
                 {/* Stage Badge */}
                 <div style={{ position: 'relative' }}>
                   <button
-                    onClick={() => { setShowStageDropdown(!showStageDropdown); setShowPriorityDropdown(false); }}
+                    onClick={() => setShowStageDropdown(!showStageDropdown)}
                     className="stage-badge"
                     style={{
                       cursor: 'pointer',
@@ -511,53 +498,6 @@ function LeadDetail() {
                     </div>
                   )}
                 </div>
-              {lead.priority && (
-                <div style={{ position: 'relative' }}>
-                  <button
-                    className={`priority-badge priority-${lead.priority.toLowerCase()}`}
-                    onClick={() => setShowPriorityDropdown(!showPriorityDropdown)}
-                    style={{ cursor: 'pointer', border: 'none', background: 'none', padding: 0 }}
-                  >
-                    <span className={`priority-badge priority-${lead.priority.toLowerCase()}`} style={{ cursor: 'pointer' }}>
-                      {lead.priority} ▼
-                    </span>
-                  </button>
-                  {showPriorityDropdown && (
-                    <div style={{
-                      position: 'absolute',
-                      top: '100%',
-                      right: 0,
-                      marginTop: '0.25rem',
-                      background: 'white',
-                      borderRadius: '8px',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
-                      zIndex: 100,
-                      minWidth: '120px',
-                      overflow: 'hidden'
-                    }}>
-                      {['High', 'Medium', 'Low'].map(priority => (
-                        <button
-                          key={priority}
-                          onClick={() => handlePriorityChange(priority)}
-                          style={{
-                            display: 'block',
-                            width: '100%',
-                            padding: '0.625rem 1rem',
-                            border: 'none',
-                            background: lead.priority === priority ? '#f0f0f0' : 'white',
-                            cursor: 'pointer',
-                            textAlign: 'left',
-                            fontSize: '0.875rem',
-                            fontWeight: lead.priority === priority ? '600' : '400'
-                          }}
-                        >
-                          {priority}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
               </div>
             </div>
             {lead.address && (

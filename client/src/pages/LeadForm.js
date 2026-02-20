@@ -26,7 +26,6 @@ const initialFormState = {
   callback_time_slots: [],
   callback_time_from: '',
   callback_time_to: '',
-  priority: 'Medium',
   stage: 'New Lead',
   callback_date: '',
   deal_value: ''
@@ -447,15 +446,6 @@ function LeadForm() {
           <div className="form-section">
             <h3>Callback Information</h3>
             <div className="form-grid">
-              <div className="form-group">
-                <label>Priority</label>
-                <select name="priority" value={formData.priority} onChange={handleChange}>
-                  <option value="Low">Low</option>
-                  <option value="Medium">Medium</option>
-                  <option value="High">High</option>
-                </select>
-              </div>
-
               <div className="form-group">
                 <label>Stage</label>
                 <select name="stage" value={formData.stage} onChange={handleChange}>
