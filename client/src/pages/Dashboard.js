@@ -201,7 +201,7 @@ function Dashboard() {
               >
                 <div className="callback-info">
                   <h4>{lead.dispensary_name}</h4>
-                  {lead.contact_name && <p>{lead.contact_name}</p>}
+                  {lead.manager_name && <p>{lead.manager_name}</p>}
                   <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
                     {lead.address || 'No location'}
                   </p>

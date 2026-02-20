@@ -229,7 +229,7 @@ function EmailTemplates() {
                   />
                 </div>
                 <div className="merge-field-help">
-                  Available merge fields: <code>{'{{dispensary_name}}'}</code> <code>{'{{contact_name}}'}</code> <code>{'{{manager_name}}'}</code> <code>{'{{contact_email}}'}</code> <code>{'{{dispensary_number}}'}</code> <code>{'{{contact_number}}'}</code> <code>{'{{current_pos_system}}'}</code> <code>{'{{address}}'}</code> <code>{'{{city}}'}</code> <code>{'{{state}}'}</code>
+                  Available merge fields: <code>{'{{dispensary_name}}'}</code> <code>{'{{contact_name}}'}</code> (Reference) <code>{'{{manager_name}}'}</code> (Name) <code>{'{{contact_email}}'}</code> <code>{'{{dispensary_number}}'}</code> <code>{'{{contact_number}}'}</code> <code>{'{{current_pos_system}}'}</code> <code>{'{{address}}'}</code> <code>{'{{city}}'}</code> <code>{'{{state}}'}</code>
                 </div>
               </div>
               <div className="modal-footer">

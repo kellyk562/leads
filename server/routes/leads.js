@@ -785,8 +785,8 @@ router.get('/export/csv', async (req, res) => {
     // CSV headers
     const headers = [
       'ID', 'Contact Date', 'Dispensary Name', 'Address', 'City', 'State', 'Zip Code',
-      'Dispensary Phone', 'Primary Contact', 'Contact Position', 'Recommended Contact',
-      'Recommended Position', 'Recommended Phone', 'Recommended Email', 'Website',
+      'Dispensary Phone', 'Reference', 'Name',
+      'Role', 'Phone', 'Email', 'Website',
       'Current POS', 'Deal Value', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
       'Priority', 'Stage', 'Callback Date', 'Created At', 'Updated At'
     ];
@@ -802,7 +802,6 @@ router.get('/export/csv', async (req, res) => {
       lead.zip_code || '',
       lead.dispensary_number || '',
       `"${(lead.contact_name || '').replace(/"/g, '""')}"`,
-      lead.contact_position || '',
       `"${(lead.manager_name || '').replace(/"/g, '""')}"`,
       lead.owner_name || '',
       lead.contact_number || '',

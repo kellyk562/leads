@@ -114,8 +114,8 @@ function Pipeline() {
                     <div key={lead.id} className="pipeline-card">
                       <Link to={`/leads/${lead.id}`} className="pipeline-card-link">
                         <div className="pipeline-card-name">{lead.dispensary_name}</div>
-                        {lead.contact_name && (
-                          <div className="pipeline-card-contact">{lead.contact_name}</div>
+                        {lead.manager_name && (
+                          <div className="pipeline-card-contact">{lead.manager_name}</div>
                         )}
                         <div className="pipeline-card-meta">
                           {lead.priority && (

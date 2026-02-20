@@ -313,7 +313,7 @@ function LeadsList() {
                     Dispensary <FaSort />
                   </th>
                   <th>Stage</th>
-                  <th>Recommended Contact</th>
+                  <th>Name</th>
                   <th>Location</th>
                   <th>Deal Value</th>
                   <th>
