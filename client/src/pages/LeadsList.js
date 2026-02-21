@@ -144,6 +144,46 @@ function LeadsList() {
     window.location.href = `${baseUrl}/leads/export/csv`;
   };
 
+  const handleExportSelected = () => {
+    const selected = leads.filter(l => selectedIds.has(l.id));
+    if (selected.length === 0) return;
+
+    const headers = [
+      'ID', 'Contact Date', 'Dispensary Name', 'Address', 'City', 'State', 'Zip Code',
+      'Dispensary Phone', 'Contact Name', 'Manager Name', 'Owner Name',
+      'Phone', 'Email', 'Website', 'Current POS', 'Deal Value', 'Stage',
+      'Priority', 'Notes', 'Callback Days', 'Callback Time From', 'Callback Time To',
+      'Callback Date', 'Source'
+    ];
+
+    const esc = (val) => {
+      if (val === null || val === undefined) return '';
+      const str = String(val).replace(/"/g, '""').replace(/\n/g, ' ');
+      return str.includes(',') || str.includes('"') ? `"${str}"` : str;
+    };
+
+    const rows = selected.map(l => [
+      l.id, l.contact_date || '', esc(l.dispensary_name), esc(l.address),
+      l.city || '', l.state || '', l.zip_code || '', l.dispensary_number || '',
+      esc(l.contact_name), esc(l.manager_name), l.owner_name || '',
+      l.contact_number || '', l.contact_email || '', l.website || '',
+      l.current_pos_system || '', l.deal_value || '', l.stage || 'New Lead',
+      l.priority || 'Medium', esc(l.notes), esc(l.callback_days),
+      l.callback_time_from || '', l.callback_time_to || '',
+      l.callback_date || '', l.source || ''
+    ].join(','));
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leads-export-${selected.length}-selected-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast.success(`Exported ${selected.length} lead${selected.length !== 1 ? 's' : ''}`);
+  };
+
   const openBatchEmail = async () => {
     try {
       const res = await emailTemplatesApi.getAll();
@@ -516,6 +556,13 @@ function LeadsList() {
               onClick={openBatchEmail}
             >
               <FaEnvelope /> Send Email
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
+              onClick={handleExportSelected}
+            >
+              <FaDownload /> Export
             </button>
             <button
               className="btn btn-sm"
