@@ -63,6 +63,13 @@ export const leadsApi = {
   // Update cadence step
   updateCadenceStep: (id, step) => api.patch(`/leads/${id}/cadence-step`, { step }),
 
+  // Get daily briefing data
+  getBriefing: () => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayDay = days[new Date().getDay()];
+    return api.get('/leads/briefing', { params: { day: todayDay } });
+  },
+
 };
 
 // Tasks API
@@ -90,6 +97,7 @@ export const emailApi = {
   getStatus: () => api.get('/email/status'),
   testConnection: () => api.post('/email/test'),
   send: (data) => api.post('/email/send', data),
+  sendBatch: (leadIds, templateId) => api.post('/email/batch', { leadIds, templateId }),
 };
 
 export default api;

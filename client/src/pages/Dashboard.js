@@ -4,78 +4,51 @@ import { format } from 'date-fns';
 import { toast } from 'react-toastify';
 import {
   FaPhoneAlt,
-  FaCalendarAlt,
   FaClock,
   FaArrowRight,
-  FaUserPlus,
   FaTasks,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaExchangeAlt,
+  FaEye,
+  FaRegClock
 } from 'react-icons/fa';
 import { leadsApi, tasksApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
-
-const formatCurrency = (value) => {
-  if (!value && value !== 0) return '$0';
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
-};
+import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+import QuickLogModal from '../components/QuickLogModal';
 
 function Dashboard() {
-  const [todayCallbacks, setTodayCallbacks] = useState([]);
-  const [allLeads, setAllLeads] = useState([]);
-  const [stats, setStats] = useState(null);
-  const [dashboardTasks, setDashboardTasks] = useState([]);
+  const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showOverdue, setShowOverdue] = useState(true);
+  const [quickLog, setQuickLog] = useState(null);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
 
-  const fetchDashboardData = useCallback(async () => {
+  const fetchBriefing = useCallback(async () => {
     try {
       setLoading(true);
-      const [todayRes, leadsRes, statsRes, overdueTasksRes, todayTasksRes] = await Promise.all([
-        leadsApi.getTodayCallbacks(),
-        leadsApi.getAll({ status: '', sort: 'created_at', order: 'DESC' }),
-        leadsApi.getStats(),
-        tasksApi.getAll({ period: 'overdue' }),
-        tasksApi.getAll({ period: 'today' })
-      ]);
-      setTodayCallbacks(todayRes.data);
-      setAllLeads(leadsRes.data.slice(0, 5)); // Get 5 most recent leads
-      setStats(statsRes.data);
-      setDashboardTasks([
-        ...overdueTasksRes.data.map(t => ({ ...t, _isOverdue: true })),
-        ...todayTasksRes.data
-      ]);
+      const res = await leadsApi.getBriefing();
+      setBriefing(res.data);
     } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      console.error('Error fetching briefing:', error);
+      toast.error('Failed to load briefing');
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    fetchDashboardData();
-  }, [fetchDashboardData]);
+    fetchBriefing();
+  }, [fetchBriefing]);
 
   const handleToggleTask = async (taskId) => {
     try {
       await tasksApi.toggleComplete(taskId);
-      fetchDashboardData();
+      fetchBriefing();
     } catch (error) {
       console.error('Error toggling task:', error);
       toast.error('Failed to update task');
-    }
-  };
-
-  const formatCallbackDays = (callbackDays) => {
-    if (!callbackDays) return 'Not set';
-    try {
-      const daysArray = typeof callbackDays === 'string' ? JSON.parse(callbackDays) : callbackDays;
-      if (!Array.isArray(daysArray) || daysArray.length === 0) return 'Not set';
-      if (daysArray.length === 7) return 'Every day';
-      return daysArray.map(d => d.slice(0, 3)).join(', ');
-    } catch {
-      return 'Not set';
     }
   };
 
@@ -87,6 +60,12 @@ function Dashboard() {
     return '';
   };
 
+  const parseStageChange = (notes) => {
+    const match = notes?.match(/Stage changed from "(.+?)" to "(.+?)"/);
+    if (match) return { from: match[1], to: match[2] };
+    return null;
+  };
+
   if (loading) {
     return (
       <div className="loading">
@@ -95,35 +74,54 @@ function Dashboard() {
     );
   }
 
+  const recurringCallbacks = (briefing?.todayCallbacks || []).filter(l => !l.callback_date);
+  const allTasks = [
+    ...(briefing?.overdueTasks || []).map(t => ({ ...t, _isOverdue: true })),
+    ...(briefing?.todayTasks || [])
+  ];
+  const visibleTasks = showOverdue ? allTasks : (briefing?.todayTasks || []);
+  const overdueCount = (briefing?.overdueTasks || []).length;
+  const todayCount = (briefing?.todayTasks || []).length;
+
   return (
     <div className="dashboard">
-      {/* Today's Callbacks Section */}
+      {/* Today's Callbacks */}
       <div className="callbacks-section">
         <h2>
           <FaPhoneAlt />
-          {todayDay}'s Callbacks ({todayCallbacks.filter(lead => !lead.callback_date).length})
+          {todayDay}'s Callbacks ({recurringCallbacks.length})
         </h2>
-        {todayCallbacks.filter(lead => !lead.callback_date).length > 0 ? (
+        {recurringCallbacks.length > 0 ? (
           <div className="callback-list">
-            {todayCallbacks.filter(lead => !lead.callback_date).map((lead) => (
-              <Link
-                to={`/leads/${lead.id}`}
-                key={lead.id}
-                className="callback-item"
-                style={{ textDecoration: 'none', color: 'inherit' }}
-              >
-                <div className="callback-info">
-                  <h4>{lead.dispensary_name}</h4>
-                  {lead.manager_name && <p>{lead.manager_name}</p>}
-                  <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
-                    {lead.address || 'No location'}
-                  </p>
-                </div>
-                <div className="callback-time">
-                  <FaClock />
-                  {formatTimeRange(lead.callback_time_from, lead.callback_time_to) || 'Any time'}
-                </div>
-              </Link>
+            {recurringCallbacks.map((lead) => (
+              <div key={lead.id} className="callback-item" style={{ display: 'flex', alignItems: 'center' }}>
+                <Link
+                  to={`/leads/${lead.id}`}
+                  style={{ flex: 1, textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <div className="callback-info">
+                    <h4>{lead.dispensary_name}</h4>
+                    {lead.manager_name && <p>{lead.manager_name}</p>}
+                    {lead.contact_number && (
+                      <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
+                        {lead.contact_number}
+                      </p>
+                    )}
+                  </div>
+                  <div className="callback-time">
+                    <FaClock />
+                    {formatTimeRange(lead.callback_time_from, lead.callback_time_to) || 'Any time'}
+                  </div>
+                </Link>
+                <button
+                  className="btn btn-sm btn-outline btn-icon"
+                  title="Quick Log"
+                  onClick={() => setQuickLog({ leadId: lead.id, name: lead.dispensary_name })}
+                  style={{ marginLeft: '0.5rem', color: '#2d5a27' }}
+                >
+                  <FaPhoneAlt />
+                </button>
+              </div>
             ))}
           </div>
         ) : (
@@ -131,15 +129,23 @@ function Dashboard() {
         )}
       </div>
 
-      {/* Tasks Section */}
-      {dashboardTasks.length > 0 && (
+      {/* Tasks (Overdue + Today) */}
+      {allTasks.length > 0 && (
         <div className="callbacks-section">
-          <h2>
-            <FaTasks />
-            Tasks ({dashboardTasks.length})
+          <h2 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span><FaTasks /> Tasks ({allTasks.length})</span>
+            {overdueCount > 0 && todayCount > 0 && (
+              <button
+                className="btn btn-sm btn-outline"
+                style={{ fontSize: '0.75rem' }}
+                onClick={() => setShowOverdue(!showOverdue)}
+              >
+                {showOverdue ? `Hide Overdue (${overdueCount})` : `Show Overdue (${overdueCount})`}
+              </button>
+            )}
           </h2>
           <div className="task-list">
-            {dashboardTasks.map(task => (
+            {visibleTasks.map(task => (
               <div
                 key={task.id}
                 className="task-item"
@@ -175,109 +181,122 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Recent Leads Section */}
-      {allLeads.length > 0 && (
+      {/* Stale Leads */}
+      {(briefing?.staleLeads || []).length > 0 && (
         <div className="callbacks-section">
           <h2>
-            <FaCalendarAlt />
-            Recent Leads
+            <FaRegClock />
+            Stale Leads ({briefing.staleLeads.length})
           </h2>
           <div className="callback-list">
-            {allLeads.map((lead) => (
-              <Link
-                to={`/leads/${lead.id}`}
-                key={lead.id}
-                className="callback-item"
-                style={{ textDecoration: 'none', color: 'inherit' }}
-              >
-                <div className="callback-info">
-                  <h4>{lead.dispensary_name}</h4>
-                  {lead.manager_name && <p>{lead.manager_name}</p>}
-                  <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
-                    {lead.address || 'No location'}
-                  </p>
-                </div>
-                <div style={{ textAlign: 'right', fontSize: '0.75rem', color: '#6c757d' }}>
-                  {formatCallbackDays(lead.callback_days)}
-                </div>
-              </Link>
-            ))}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-            <Link to="/leads" className="btn btn-outline">
-              View All Leads <FaArrowRight />
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Pipeline Summary */}
-      {stats?.stageCounts && (
-        <div className="callbacks-section">
-          <h2>
-            <FaArrowRight />
-            Pipeline Summary
-          </h2>
-          <div className="pipeline-summary">
-            {STAGES.map(stage => (
-              <div
-                key={stage}
-                className="pipeline-summary-card"
-                style={{
-                  borderTopColor: STAGE_COLORS[stage],
-                  background: STAGE_BG_COLORS[stage],
-                }}
-              >
-                <div className="pipeline-summary-count" style={{ color: STAGE_COLORS[stage] }}>
-                  {stats.stageCounts[stage] || 0}
-                </div>
-                <div className="pipeline-summary-label" style={{ color: STAGE_COLORS[stage] }}>
-                  {stage}
-                </div>
-                {stats.stageValues?.[stage] > 0 && (
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#2e7d32', marginTop: '0.25rem' }}>
-                    {formatCurrency(stats.stageValues[stage])}
+            {briefing.staleLeads.map((lead) => (
+              <div key={lead.id} className="callback-item" style={{ display: 'flex', alignItems: 'center' }}>
+                <Link
+                  to={`/leads/${lead.id}`}
+                  style={{ flex: 1, textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}
+                >
+                  <div className="callback-info">
+                    <h4>{lead.dispensary_name}</h4>
+                    <span
+                      className="stage-badge"
+                      style={{
+                        background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+                        color: STAGE_COLORS[lead.stage || 'New Lead'],
+                        fontSize: '0.7rem'
+                      }}
+                    >
+                      {lead.stage || 'New Lead'}
+                    </span>
                   </div>
-                )}
+                  <div style={{ textAlign: 'right', fontSize: '0.85rem' }}>
+                    <span style={{ color: '#dc3545', fontWeight: 600 }}>
+                      {lead.days_inactive}d inactive
+                    </span>
+                    {lead.deal_value > 0 && (
+                      <div style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
+                        ${Number(lead.deal_value).toLocaleString()}/mo
+                      </div>
+                    )}
+                  </div>
+                </Link>
+                <button
+                  className="btn btn-sm btn-outline btn-icon"
+                  title="Quick Log"
+                  onClick={() => setQuickLog({ leadId: lead.id, name: lead.dispensary_name })}
+                  style={{ marginLeft: '0.5rem', color: '#2d5a27' }}
+                >
+                  <FaPhoneAlt />
+                </button>
               </div>
             ))}
           </div>
-          {stats.totalPipelineValue > 0 && (
-            <div style={{
-              marginTop: '1rem',
-              padding: '0.75rem 1rem',
-              background: '#e8f5e9',
-              borderRadius: '8px',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center'
-            }}>
-              <span style={{ fontWeight: 600, color: '#2d5a27' }}>Total Pipeline Value</span>
-              <span style={{ fontWeight: 700, fontSize: '1.25rem', color: '#2e7d32' }}>
-                {formatCurrency(stats.totalPipelineValue)}
-              </span>
-            </div>
-          )}
-          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-            <Link to="/pipeline" className="btn btn-outline">
-              View Pipeline <FaArrowRight />
-            </Link>
+        </div>
+      )}
+
+      {/* Recent Pipeline Moves */}
+      {(briefing?.recentMoves || []).length > 0 && (
+        <div className="callbacks-section">
+          <h2>
+            <FaExchangeAlt />
+            Recent Pipeline Moves
+          </h2>
+          <div className="callback-list">
+            {briefing.recentMoves.map((move) => {
+              const change = parseStageChange(move.notes);
+              return (
+                <Link
+                  to={`/leads/${move.lead_id}`}
+                  key={move.id}
+                  className="callback-item"
+                  style={{ textDecoration: 'none', color: 'inherit' }}
+                >
+                  <div className="callback-info">
+                    <h4>{move.dispensary_name}</h4>
+                    {change && (
+                      <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>
+                        <span
+                          className="stage-badge"
+                          style={{
+                            background: STAGE_BG_COLORS[change.from] || '#e9ecef',
+                            color: STAGE_COLORS[change.from] || '#6c757d',
+                            fontSize: '0.7rem'
+                          }}
+                        >
+                          {change.from}
+                        </span>
+                        <FaArrowRight size={10} style={{ margin: '0 0.4rem', color: '#6c757d' }} />
+                        <span
+                          className="stage-badge"
+                          style={{
+                            background: STAGE_BG_COLORS[change.to] || '#e9ecef',
+                            color: STAGE_COLORS[change.to] || '#6c757d',
+                            fontSize: '0.7rem'
+                          }}
+                        >
+                          {change.to}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                  <div style={{ fontSize: '0.8rem', color: '#6c757d', whiteSpace: 'nowrap' }}>
+                    {move.contact_date ? format(new Date(move.contact_date), 'MMM d, h:mm a') : ''}
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Quick Actions */}
-      <div className="callbacks-section">
-        <h2>Quick Actions</h2>
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '1rem' }}>
-          <Link to="/leads/new" className="btn btn-primary">
-            <FaUserPlus /> Add New Lead
-          </Link>
-          <Link to="/leads" className="btn btn-outline">
-            View All Leads
-          </Link>
-        </div>
-      </div>
+      {/* Quick Log Modal */}
+      {quickLog && (
+        <QuickLogModal
+          leadId={quickLog.leadId}
+          dispensaryName={quickLog.name}
+          onClose={() => setQuickLog(null)}
+          onSaved={() => { setQuickLog(null); fetchBriefing(); }}
+        />
+      )}
     </div>
   );
 }

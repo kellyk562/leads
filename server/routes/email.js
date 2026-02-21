@@ -88,4 +88,89 @@ router.post('/send', [
   }
 });
 
+// POST /api/email/batch — send a template email to multiple leads
+router.post('/batch', [
+  body('leadIds').isArray({ min: 1 }).withMessage('leadIds array is required'),
+  body('templateId').isInt().withMessage('templateId is required'),
+], async (req, res) => {
+  try {
+    if (!emailService.isConfigured()) {
+      return res.status(503).json({ error: 'Email is not configured. Add RESEND_API_KEY to your environment variables.' });
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { leadIds, templateId } = req.body;
+
+    // Fetch template
+    const template = await db.get('SELECT * FROM email_templates WHERE id = $1', [templateId]);
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    // Fetch all leads by IDs
+    const leads = await db.all(
+      `SELECT * FROM leads WHERE id = ANY($1::int[])`,
+      [leadIds]
+    );
+
+    let sent = 0;
+    let skipped = 0;
+    const sendErrors = [];
+
+    // Merge field replacer
+    const renderTemplate = (text, lead) => {
+      return text
+        .replace(/\{\{dispensary_name\}\}/g, lead.dispensary_name || '')
+        .replace(/\{\{contact_name\}\}/g, lead.contact_name || lead.manager_name || '')
+        .replace(/\{\{manager_name\}\}/g, lead.manager_name || '')
+        .replace(/\{\{contact_email\}\}/g, lead.contact_email || '')
+        .replace(/\{\{current_pos_system\}\}/g, lead.current_pos_system || '')
+        .replace(/\{\{city\}\}/g, lead.city || '')
+        .replace(/\{\{state\}\}/g, lead.state || '')
+        .replace(/\{\{stage\}\}/g, lead.stage || '');
+    };
+
+    for (const lead of leads) {
+      if (!lead.contact_email) {
+        skipped++;
+        continue;
+      }
+
+      try {
+        const subject = renderTemplate(template.subject, lead);
+        const body = renderTemplate(template.body, lead);
+
+        await emailService.sendEmail({ to: lead.contact_email, subject, text: body });
+
+        // Log to contact history
+        await db.run(`
+          INSERT INTO contact_history (lead_id, contact_method, notes, outcome, email_subject, email_template_id)
+          VALUES ($1, 'Email', $2, $3, $4, $5)
+        `, [
+          lead.id,
+          body,
+          `Email sent (template: ${template.name})`,
+          subject,
+          templateId,
+        ]);
+
+        // Update lead's updated_at
+        await db.run('UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [lead.id]);
+        sent++;
+      } catch (err) {
+        sendErrors.push(`${lead.dispensary_name}: ${err.message}`);
+      }
+    }
+
+    res.json({ sent, skipped, errors: sendErrors });
+  } catch (error) {
+    console.error('Batch email failed:', error);
+    res.status(500).json({ error: `Batch email failed: ${error.message}` });
+  }
+});
+
 module.exports = router;

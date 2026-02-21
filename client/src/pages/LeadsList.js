@@ -11,15 +11,18 @@ import {
   FaFilter,
   FaSort,
   FaPhone,
+  FaPhoneAlt,
   FaEnvelope,
   FaMapMarkerAlt,
   FaDownload,
   FaUpload,
-  FaTimes
+  FaTimes,
+  FaExclamationTriangle
 } from 'react-icons/fa';
-import { leadsApi } from '../services/api';
+import { leadsApi, emailApi, emailTemplatesApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
+import QuickLogModal from '../components/QuickLogModal';
 
 function LeadsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -33,6 +36,12 @@ function LeadsList() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
   const [pendingBulkClose, setPendingBulkClose] = useState(null);
+  const [quickLog, setQuickLog] = useState(null);
+  const [batchEmailOpen, setBatchEmailOpen] = useState(false);
+  const [batchTemplates, setBatchTemplates] = useState([]);
+  const [batchSelectedTemplate, setBatchSelectedTemplate] = useState(null);
+  const [batchStep, setBatchStep] = useState(1);
+  const [batchSending, setBatchSending] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -130,6 +139,43 @@ function LeadsList() {
       (window.location.port === '3000' ? 'http://localhost:5001/api' : '/api');
     window.location.href = `${baseUrl}/leads/export/csv`;
   };
+
+  const openBatchEmail = async () => {
+    try {
+      const res = await emailTemplatesApi.getAll();
+      setBatchTemplates(res.data);
+      setBatchSelectedTemplate(null);
+      setBatchStep(1);
+      setBatchEmailOpen(true);
+    } catch (error) {
+      toast.error('Failed to load templates');
+    }
+  };
+
+  const handleBatchSend = async () => {
+    if (!batchSelectedTemplate) return;
+    setBatchSending(true);
+    try {
+      const res = await emailApi.sendBatch([...selectedIds], batchSelectedTemplate);
+      const { sent, skipped, errors } = res.data;
+      toast.success(`Sent to ${sent} lead${sent !== 1 ? 's' : ''}${skipped ? `, ${skipped} skipped (no email)` : ''}`);
+      if (errors?.length > 0) {
+        toast.warn(`${errors.length} error${errors.length !== 1 ? 's' : ''}: ${errors[0]}`);
+      }
+      setBatchEmailOpen(false);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+      fetchLeads();
+    } catch (error) {
+      console.error('Batch email error:', error);
+      toast.error('Failed to send batch email');
+    } finally {
+      setBatchSending(false);
+    }
+  };
+
+  const batchLeadsWithEmail = leads.filter(l => selectedIds.has(l.id) && l.contact_email).length;
+  const batchLeadsWithoutEmail = selectedIds.size - batchLeadsWithEmail;
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -402,6 +448,14 @@ function LeadsList() {
                     </td>
                     <td>
                       <div className="action-buttons">
+                        <button
+                          className="btn btn-sm btn-outline btn-icon"
+                          title="Quick Log"
+                          onClick={() => setQuickLog({ leadId: lead.id, name: lead.dispensary_name })}
+                          style={{ color: '#2d5a27' }}
+                        >
+                          <FaPhoneAlt />
+                        </button>
                         <Link
                           to={`/leads/${lead.id}`}
                           className="btn btn-sm btn-outline btn-icon"
@@ -450,6 +504,13 @@ function LeadsList() {
             <button
               className="btn btn-sm"
               style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
+              onClick={openBatchEmail}
+            >
+              <FaEnvelope /> Send Email
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}
               onClick={() => { setSelectedIds(new Set()); setSelectAll(false); }}
             >
               <FaTimes /> Clear
@@ -490,6 +551,111 @@ function LeadsList() {
               <button className="btn btn-danger" onClick={() => handleDelete(deleteConfirm)}>
                 Delete Lead
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Log Modal */}
+      {quickLog && (
+        <QuickLogModal
+          leadId={quickLog.leadId}
+          dispensaryName={quickLog.name}
+          onClose={() => setQuickLog(null)}
+          onSaved={() => { setQuickLog(null); fetchLeads(); }}
+        />
+      )}
+
+      {/* Batch Email Modal */}
+      {batchEmailOpen && (
+        <div className="modal-overlay" onClick={() => setBatchEmailOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>Send Batch Email</h3>
+              <button className="modal-close" onClick={() => setBatchEmailOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              {batchStep === 1 && (
+                <div>
+                  <div className="form-group">
+                    <label>Select Template</label>
+                    {batchTemplates.length === 0 ? (
+                      <p style={{ color: '#6c757d' }}>No email templates found. Create one first.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {batchTemplates.map(t => (
+                          <label
+                            key={t.id}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              padding: '0.75rem',
+                              border: batchSelectedTemplate === t.id ? '2px solid #2d5a27' : '1px solid #dee2e6',
+                              borderRadius: '8px',
+                              cursor: 'pointer',
+                              background: batchSelectedTemplate === t.id ? '#e8f5e9' : 'white'
+                            }}
+                          >
+                            <input
+                              type="radio"
+                              name="batchTemplate"
+                              checked={batchSelectedTemplate === t.id}
+                              onChange={() => setBatchSelectedTemplate(t.id)}
+                              style={{ accentColor: '#2d5a27' }}
+                            />
+                            <div>
+                              <div style={{ fontWeight: 600 }}>{t.name}</div>
+                              <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>{t.subject}</div>
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {batchStep === 2 && (
+                <div>
+                  <p style={{ marginBottom: '1rem' }}>
+                    <strong>{batchLeadsWithEmail}</strong> lead{batchLeadsWithEmail !== 1 ? 's' : ''} will receive this email.
+                  </p>
+                  {batchLeadsWithoutEmail > 0 && (
+                    <p style={{ color: '#e65100', marginBottom: '1rem' }}>
+                      <FaExclamationTriangle style={{ marginRight: '0.25rem' }} />
+                      {batchLeadsWithoutEmail} lead{batchLeadsWithoutEmail !== 1 ? 's' : ''} will be skipped (no email address).
+                    </p>
+                  )}
+                  <p style={{ color: '#6c757d', fontSize: '0.875rem' }}>
+                    Template: <strong>{batchTemplates.find(t => t.id === batchSelectedTemplate)?.name}</strong>
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              {batchStep === 1 ? (
+                <>
+                  <button className="btn btn-outline" onClick={() => setBatchEmailOpen(false)}>Cancel</button>
+                  <button
+                    className="btn btn-primary"
+                    disabled={!batchSelectedTemplate}
+                    onClick={() => setBatchStep(2)}
+                  >
+                    Next
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="btn btn-outline" onClick={() => setBatchStep(1)}>Back</button>
+                  <button
+                    className="btn btn-primary"
+                    disabled={batchSending || batchLeadsWithEmail === 0}
+                    onClick={handleBatchSend}
+                  >
+                    {batchSending ? 'Sending...' : `Send to ${batchLeadsWithEmail} Lead${batchLeadsWithEmail !== 1 ? 's' : ''}`}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

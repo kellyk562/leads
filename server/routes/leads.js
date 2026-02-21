@@ -85,6 +85,68 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get daily briefing data (all-in-one dashboard endpoint)
+router.get('/briefing', async (req, res) => {
+  try {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const todayDay = req.query.day && days.includes(req.query.day) ? req.query.day : days[new Date().getDay()];
+    const todayDate = new Date().toISOString().split('T')[0];
+
+    const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves] = await Promise.all([
+      // Today's callbacks
+      db.all(`
+        SELECT * FROM leads
+        WHERE callback_days ILIKE $1
+        ORDER BY dispensary_name ASC
+      `, [`%${todayDay}%`]),
+      // Overdue tasks (due_date < today, pending)
+      db.all(`
+        SELECT t.*, l.dispensary_name
+        FROM tasks t
+        JOIN leads l ON l.id = t.lead_id
+        WHERE t.due_date < $1 AND t.status = 'pending'
+        ORDER BY t.due_date ASC
+      `, [todayDate]),
+      // Today's tasks (due_date = today, pending)
+      db.all(`
+        SELECT t.*, l.dispensary_name
+        FROM tasks t
+        JOIN leads l ON l.id = t.lead_id
+        WHERE t.due_date = $1 AND t.status = 'pending'
+        ORDER BY t.due_time ASC NULLS LAST
+      `, [todayDate]),
+      // Stale leads (no activity in 14+ days, not closed)
+      db.all(`
+        SELECT l.id, l.dispensary_name, l.stage, l.deal_value, l.contact_number, l.contact_email,
+          EXTRACT(DAY FROM NOW() - COALESCE(MAX(ch.contact_date), l.created_at))::INTEGER AS days_inactive
+        FROM leads l
+        LEFT JOIN contact_history ch ON ch.lead_id = l.id
+        WHERE l.stage NOT IN ('Closed Won', 'Closed Lost')
+        GROUP BY l.id, l.dispensary_name, l.stage, l.deal_value, l.contact_number, l.contact_email, l.created_at
+        HAVING COALESCE(MAX(ch.contact_date), l.created_at) < NOW() - INTERVAL '14 days'
+        ORDER BY days_inactive DESC
+        LIMIT 20
+      `),
+      // Recent pipeline moves (last 7 days, max 10)
+      db.all(`
+        SELECT ch.id, ch.lead_id, ch.notes, ch.contact_date, l.dispensary_name
+        FROM contact_history ch
+        JOIN leads l ON l.id = ch.lead_id
+        WHERE ch.contact_method = 'Other'
+          AND ch.notes LIKE 'Stage changed%'
+          AND ch.contact_date >= NOW() - INTERVAL '7 days'
+        ORDER BY ch.contact_date DESC
+        LIMIT 10
+      `)
+    ]);
+
+    res.json({ todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves });
+  } catch (error) {
+    console.error('Error fetching briefing:', error);
+    res.status(500).json({ error: 'Failed to fetch briefing data' });
+  }
+});
+
 // Get today's callbacks (leads scheduled for today's day of week)
 router.get('/callbacks/today', async (req, res) => {
   try {
