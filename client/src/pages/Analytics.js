@@ -220,6 +220,53 @@ function Analytics() {
         )}
       </div>
 
+      {/* Win/Loss Reasons */}
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1.5rem' }}>
+        <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem' }}>Win/Loss Reasons</h3>
+        {data.winLossReasons && data.winLossReasons.length > 0 ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+            <div>
+              <h4 style={{ fontSize: '0.9375rem', color: '#198754', marginBottom: '0.75rem' }}>Closed Won</h4>
+              {data.winLossReasons.filter(r => r.type === 'won').length > 0 ? (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {data.winLossReasons.filter(r => r.type === 'won').map((r, i) => (
+                    <li key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0',
+                      borderBottom: '1px solid #e9ecef', fontSize: '0.875rem'
+                    }}>
+                      <span>{r.reason}</span>
+                      <span style={{ fontWeight: 600, color: '#198754' }}>{r.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={{ color: '#6c757d', fontStyle: 'italic', fontSize: '0.875rem' }}>No data yet</p>
+              )}
+            </div>
+            <div>
+              <h4 style={{ fontSize: '0.9375rem', color: '#dc3545', marginBottom: '0.75rem' }}>Closed Lost</h4>
+              {data.winLossReasons.filter(r => r.type === 'lost').length > 0 ? (
+                <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+                  {data.winLossReasons.filter(r => r.type === 'lost').map((r, i) => (
+                    <li key={i} style={{
+                      display: 'flex', justifyContent: 'space-between', padding: '0.5rem 0',
+                      borderBottom: '1px solid #e9ecef', fontSize: '0.875rem'
+                    }}>
+                      <span>{r.reason}</span>
+                      <span style={{ fontWeight: 600, color: '#dc3545' }}>{r.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={{ color: '#6c757d', fontStyle: 'italic', fontSize: '0.875rem' }}>No data yet</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <p style={{ color: '#6c757d', fontStyle: 'italic' }}>No win/loss reasons recorded yet. Close deals with reasons to see data here.</p>
+        )}
+      </div>
+
       {/* Stale Leads */}
       <div className="card" style={{ padding: '1.5rem' }}>
         <h3 style={{ marginBottom: '1rem', fontSize: '1.125rem' }}>

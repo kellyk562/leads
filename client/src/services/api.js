@@ -24,7 +24,7 @@ export const leadsApi = {
   update: (id, data) => api.put(`/leads/${id}`, data),
 
   // Update lead stage (lightweight)
-  updateStage: (id, stage) => api.patch(`/leads/${id}/stage`, { stage }),
+  updateStage: (id, stage, reason) => api.patch(`/leads/${id}/stage`, { stage, ...(reason && { reason }) }),
 
   // Delete lead
   delete: (id) => api.delete(`/leads/${id}`),
@@ -58,7 +58,7 @@ export const leadsApi = {
   checkDuplicates: (names) => api.post('/leads/check-duplicates', { names }),
 
   // Bulk update stage
-  bulkUpdateStage: (ids, stage) => api.patch('/leads/bulk/stage', { ids, stage }),
+  bulkUpdateStage: (ids, stage, reason) => api.patch('/leads/bulk/stage', { ids, stage, ...(reason && { reason }) }),
 
 };
 

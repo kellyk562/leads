@@ -3,11 +3,13 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import CloseReasonModal from '../components/CloseReasonModal';
 
 function Pipeline() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [pendingClose, setPendingClose] = useState(null); // { leadId, stage }
 
   const fetchLeads = useCallback(async () => {
     try {
@@ -52,9 +54,17 @@ function Pipeline() {
     return values;
   }, [groupedLeads]);
 
-  const handleStageChange = async (leadId, newStage) => {
+  const initiateStageChange = (leadId, newStage) => {
+    if (newStage === 'Closed Won' || newStage === 'Closed Lost') {
+      setPendingClose({ leadId, stage: newStage });
+    } else {
+      handleStageChange(leadId, newStage);
+    }
+  };
+
+  const handleStageChange = async (leadId, newStage, reason) => {
     try {
-      await leadsApi.updateStage(leadId, newStage);
+      await leadsApi.updateStage(leadId, newStage, reason);
       setLeads(prev => prev.map(l => l.id === leadId ? { ...l, stage: newStage } : l));
       toast.success(`Moved to ${newStage}`);
     } catch (error) {
@@ -123,6 +133,16 @@ function Pipeline() {
                               {formatCurrency(lead.deal_value)}
                             </span>
                           )}
+                          <span style={{
+                            fontSize: '0.6875rem',
+                            fontWeight: 600,
+                            padding: '0.125rem 0.5rem',
+                            borderRadius: '50px',
+                            background: getScoreBg(lead.lead_score || 0),
+                            color: getScoreColor(lead.lead_score || 0)
+                          }}>
+                            {lead.lead_score || 0} {getScoreLabel(lead.lead_score || 0)}
+                          </span>
                           {lead.days_since_last_contact !== null && lead.days_since_last_contact !== undefined ? (
                             <span style={{
                               fontSize: '0.6875rem',
@@ -154,7 +174,7 @@ function Pipeline() {
                         <button
                           className="pipeline-arrow-btn"
                           disabled={!prevStage}
-                          onClick={() => prevStage && handleStageChange(lead.id, prevStage)}
+                          onClick={() => prevStage && initiateStageChange(lead.id, prevStage)}
                           title={prevStage ? `Move to ${prevStage}` : ''}
                         >
                           <FaChevronLeft />
@@ -162,7 +182,7 @@ function Pipeline() {
                         <button
                           className="pipeline-arrow-btn"
                           disabled={!nextStage}
-                          onClick={() => nextStage && handleStageChange(lead.id, nextStage)}
+                          onClick={() => nextStage && initiateStageChange(lead.id, nextStage)}
                           title={nextStage ? `Move to ${nextStage}` : ''}
                         >
                           <FaChevronRight />
@@ -176,6 +196,18 @@ function Pipeline() {
           </div>
         ))}
       </div>
+
+      {/* Close Reason Modal */}
+      {pendingClose && (
+        <CloseReasonModal
+          stage={pendingClose.stage}
+          onConfirm={(reason) => {
+            handleStageChange(pendingClose.leadId, pendingClose.stage, reason);
+            setPendingClose(null);
+          }}
+          onCancel={() => setPendingClose(null)}
+        />
+      )}
     </div>
   );
 }

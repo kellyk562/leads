@@ -30,3 +30,40 @@ export const STAGE_BG_COLORS = {
   'Closed Won': '#d1e7dd',
   'Closed Lost': '#f8d7da',
 };
+
+// Lead score helpers
+export const getScoreColor = (score) => {
+  if (score >= 70) return '#198754';
+  if (score >= 40) return '#e65100';
+  return '#6c757d';
+};
+
+export const getScoreBg = (score) => {
+  if (score >= 70) return '#d1e7dd';
+  if (score >= 40) return '#fff3e0';
+  return '#e9ecef';
+};
+
+export const getScoreLabel = (score) => {
+  if (score >= 70) return 'Hot';
+  if (score >= 40) return 'Warm';
+  return 'Cold';
+};
+
+// Win/Loss reason presets
+export const CLOSED_WON_REASONS = [
+  'Price',
+  'Features',
+  'Referral',
+  'Support',
+  'Demo impressed',
+];
+
+export const CLOSED_LOST_REASONS = [
+  'Chose competitor',
+  'Too expensive',
+  'Not ready',
+  'No budget',
+  'Went dark',
+  'Bad timing',
+];

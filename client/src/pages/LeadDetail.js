@@ -20,7 +20,8 @@ import {
   FaPaperPlane
 } from 'react-icons/fa';
 import { leadsApi, tasksApi, emailTemplatesApi, emailApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import CloseReasonModal from '../components/CloseReasonModal';
 
 const formatCurrency = (value) => {
   if (!value && value !== 0) return null;
@@ -62,6 +63,7 @@ function LeadDetail() {
   const [emailConfigured, setEmailConfigured] = useState(null);
   const [sendingEmail, setSendingEmail] = useState(false);
   const [activityFilter, setActivityFilter] = useState('All');
+  const [pendingCloseStage, setPendingCloseStage] = useState(null);
 
   const fetchLead = useCallback(async () => {
     try {
@@ -102,9 +104,14 @@ function LeadDetail() {
     }
   };
 
-  const handleStageChange = async (newStage) => {
+  const handleStageChange = async (newStage, reason) => {
+    if (!reason && (newStage === 'Closed Won' || newStage === 'Closed Lost')) {
+      setShowStageDropdown(false);
+      setPendingCloseStage(newStage);
+      return;
+    }
     try {
-      await leadsApi.updateStage(id, newStage);
+      await leadsApi.updateStage(id, newStage, reason);
       setLead(prev => ({ ...prev, stage: newStage }));
       setShowStageDropdown(false);
       toast.success(`Stage updated to ${newStage}`);
@@ -527,6 +534,21 @@ function LeadDetail() {
                   : 'Never contacted'}
               </span>
             )}
+            {lead.lead_score !== undefined && (
+              <span style={{
+                display: 'inline-block',
+                marginTop: '0.25rem',
+                marginLeft: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '50px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                background: getScoreBg(lead.lead_score || 0),
+                color: getScoreColor(lead.lead_score || 0)
+              }}>
+                Score: {lead.lead_score || 0} ({getScoreLabel(lead.lead_score || 0)})
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
             <button
@@ -761,7 +783,7 @@ function LeadDetail() {
                         <p style={{ fontWeight: 500, color: '#495057' }}>Subject: {item.emailSubject}</p>
                       )}
                       {item.notes && <p>{item.notes}</p>}
-                      {item.outcome && (
+                      {item.outcome && !item.outcome.startsWith('Stage:') && (
                         <p><strong>Outcome:</strong> {item.outcome}</p>
                       )}
                       {item.nextCallback && (
@@ -980,6 +1002,18 @@ function LeadDetail() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Close Reason Modal */}
+      {pendingCloseStage && (
+        <CloseReasonModal
+          stage={pendingCloseStage}
+          onConfirm={(reason) => {
+            handleStageChange(pendingCloseStage, reason);
+            setPendingCloseStage(null);
+          }}
+          onCancel={() => setPendingCloseStage(null)}
+        />
       )}
 
       {/* Send Email Modal */}

@@ -21,7 +21,32 @@ router.get('/', async (req, res) => {
     const { search, stage, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = `SELECT l.*, sub.last_contact_date,
-      EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact
+      EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact,
+      (
+        CASE l.stage
+          WHEN 'New Lead' THEN 5 WHEN 'Contacted' THEN 10 WHEN 'Demo Scheduled' THEN 15
+          WHEN 'Demo Completed' THEN 20 WHEN 'Proposal Sent' THEN 25 WHEN 'Negotiating' THEN 30
+          WHEN 'Closed Won' THEN 30 WHEN 'Closed Lost' THEN 0 ELSE 5
+        END
+        + CASE
+          WHEN EXTRACT(DAY FROM NOW() - sub.last_contact_date) <= 3 THEN 25
+          WHEN EXTRACT(DAY FROM NOW() - sub.last_contact_date) <= 7 THEN 20
+          WHEN EXTRACT(DAY FROM NOW() - sub.last_contact_date) <= 14 THEN 12
+          WHEN EXTRACT(DAY FROM NOW() - sub.last_contact_date) <= 30 THEN 5
+          ELSE 0
+        END
+        + CASE
+          WHEN COALESCE(l.deal_value, 0) = 0 THEN 0
+          WHEN l.deal_value <= 200 THEN 8
+          WHEN l.deal_value <= 500 THEN 14
+          ELSE 20
+        END
+        + CASE WHEN l.contact_email IS NOT NULL AND l.contact_email != '' THEN 5 ELSE 0 END
+        + CASE WHEN l.contact_number IS NOT NULL AND l.contact_number != '' THEN 5 ELSE 0 END
+        + CASE WHEN l.manager_name IS NOT NULL AND l.manager_name != '' THEN 5 ELSE 0 END
+        + CASE WHEN l.callback_days IS NOT NULL AND l.callback_days != '' AND l.callback_days != '[]' THEN 5 ELSE 0 END
+        + CASE WHEN l.callback_date IS NOT NULL THEN 5 ELSE 0 END
+      ) AS lead_score
       FROM leads l
       LEFT JOIN (
         SELECT lead_id, MAX(contact_date) AS last_contact_date
@@ -45,11 +70,12 @@ router.get('/', async (req, res) => {
       paramIndex++;
     }
 
-    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value'];
+    const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value', 'lead_score'];
     const sortColumn = validSortColumns.includes(sort) ? sort : 'updated_at';
     const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
 
-    sql += ` ORDER BY l.${sortColumn} ${sortOrder}`;
+    const sortPrefix = sortColumn === 'lead_score' ? '' : 'l.';
+    sql += ` ORDER BY ${sortPrefix}${sortColumn} ${sortOrder}`;
 
     const leads = await db.all(sql, params);
     res.json(leads);
@@ -170,7 +196,8 @@ router.get('/analytics', async (req, res) => {
       leadsByState,
       weeklyNewLeads,
       weeklyClosedWon,
-      staleLeads
+      staleLeads,
+      winLossReasons
     ] = await Promise.all([
       // 1. Stage counts (cumulative for funnel)
       db.all(`SELECT stage, COUNT(*) as count FROM leads GROUP BY stage`),
@@ -225,6 +252,20 @@ router.get('/analytics', async (req, res) => {
         GROUP BY l.id, l.dispensary_name, l.stage, l.deal_value, l.created_at
         HAVING COALESCE(MAX(ch.contact_date), l.created_at) < NOW() - INTERVAL '14 days'
         ORDER BY days_inactive DESC
+      `),
+      // 9. Win/Loss reasons from contact_history outcomes
+      db.all(`
+        SELECT ch.outcome AS reason,
+          CASE WHEN ch.notes LIKE '%"Closed Won"%' THEN 'won' ELSE 'lost' END AS type,
+          COUNT(*) AS count
+        FROM contact_history ch
+        WHERE ch.contact_method = 'Other'
+          AND ch.notes LIKE 'Stage changed%'
+          AND (ch.notes LIKE '%"Closed Won"%' OR ch.notes LIKE '%"Closed Lost"%')
+          AND ch.outcome IS NOT NULL
+          AND ch.outcome NOT LIKE 'Stage:%'
+        GROUP BY ch.outcome, type
+        ORDER BY count DESC
       `)
     ]);
 
@@ -249,7 +290,8 @@ router.get('/analytics', async (req, res) => {
       leadsByState,
       weeklyNewLeads,
       weeklyClosedWon,
-      staleLeads
+      staleLeads,
+      winLossReasons
     });
   } catch (error) {
     console.error('Error fetching analytics:', error);
@@ -379,7 +421,7 @@ router.post('/check-duplicates', async (req, res) => {
 router.patch('/bulk/stage', async (req, res) => {
   const client = await db.pool.connect();
   try {
-    const { ids, stage } = req.body;
+    const { ids, stage, reason } = req.body;
 
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: 'ids array is required' });
@@ -404,13 +446,15 @@ router.patch('/bulk/stage', async (req, res) => {
     );
 
     // Log stage changes to contact_history
+    const isClosed = stage === 'Closed Won' || stage === 'Closed Lost';
+    const outcome = (isClosed && reason) ? reason : `Stage: ${stage}`;
     for (const lead of currentLeads.rows) {
       const oldStage = lead.stage || 'New Lead';
       if (oldStage !== stage) {
         await client.query(
           `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
            VALUES ($1, 'Other', $2, $3)`,
-          [lead.id, `Stage changed from "${oldStage}" to "${stage}"`, `Stage: ${stage}`]
+          [lead.id, `Stage changed from "${oldStage}" to "${stage}"`, outcome]
         );
       }
     }
@@ -440,22 +484,52 @@ router.get('/:id', param('id').isInt(), async (req, res) => {
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    // Get contact history, days since last contact, and completed tasks in parallel
-    const [history, lastContactRow, completedTasks] = await Promise.all([
+    // Get contact history, days since last contact, completed tasks, and lead score in parallel
+    const [history, lastContactRow, completedTasks, scoreRow] = await Promise.all([
       db.all(`SELECT * FROM contact_history WHERE lead_id = $1 ORDER BY contact_date DESC`, [req.params.id]),
       db.get(`
         SELECT EXTRACT(DAY FROM NOW() - MAX(contact_date))::INTEGER AS days_since_last_contact
         FROM contact_history
         WHERE lead_id = $1 AND NOT (contact_method = 'Other' AND notes LIKE 'Stage changed%')
       `, [req.params.id]),
-      db.all(`SELECT * FROM tasks WHERE lead_id = $1 AND status = 'completed' ORDER BY completed_at DESC`, [req.params.id])
+      db.all(`SELECT * FROM tasks WHERE lead_id = $1 AND status = 'completed' ORDER BY completed_at DESC`, [req.params.id]),
+      db.get(`
+        SELECT (
+          CASE l.stage
+            WHEN 'New Lead' THEN 5 WHEN 'Contacted' THEN 10 WHEN 'Demo Scheduled' THEN 15
+            WHEN 'Demo Completed' THEN 20 WHEN 'Proposal Sent' THEN 25 WHEN 'Negotiating' THEN 30
+            WHEN 'Closed Won' THEN 30 WHEN 'Closed Lost' THEN 0 ELSE 5
+          END
+          + CASE
+            WHEN sub.days <= 3 THEN 25 WHEN sub.days <= 7 THEN 20
+            WHEN sub.days <= 14 THEN 12 WHEN sub.days <= 30 THEN 5 ELSE 0
+          END
+          + CASE
+            WHEN COALESCE(l.deal_value, 0) = 0 THEN 0
+            WHEN l.deal_value <= 200 THEN 8 WHEN l.deal_value <= 500 THEN 14 ELSE 20
+          END
+          + CASE WHEN l.contact_email IS NOT NULL AND l.contact_email != '' THEN 5 ELSE 0 END
+          + CASE WHEN l.contact_number IS NOT NULL AND l.contact_number != '' THEN 5 ELSE 0 END
+          + CASE WHEN l.manager_name IS NOT NULL AND l.manager_name != '' THEN 5 ELSE 0 END
+          + CASE WHEN l.callback_days IS NOT NULL AND l.callback_days != '' AND l.callback_days != '[]' THEN 5 ELSE 0 END
+          + CASE WHEN l.callback_date IS NOT NULL THEN 5 ELSE 0 END
+        ) AS lead_score
+        FROM leads l
+        LEFT JOIN LATERAL (
+          SELECT EXTRACT(DAY FROM NOW() - MAX(contact_date))::INTEGER AS days
+          FROM contact_history
+          WHERE lead_id = l.id AND NOT (contact_method = 'Other' AND notes LIKE 'Stage changed%')
+        ) sub ON true
+        WHERE l.id = $1
+      `, [req.params.id])
     ]);
 
     res.json({
       ...lead,
       contact_history: history,
       days_since_last_contact: lastContactRow?.days_since_last_contact ?? null,
-      completed_tasks: completedTasks
+      completed_tasks: completedTasks,
+      lead_score: scoreRow?.lead_score ?? 0
     });
   } catch (error) {
     console.error('Error fetching lead:', error);
@@ -636,16 +710,18 @@ router.patch('/:id/stage', [
       return res.status(404).json({ error: 'Lead not found' });
     }
 
-    const { stage } = req.body;
+    const { stage, reason } = req.body;
     const oldStage = existing.stage || 'New Lead';
 
     await db.run(`UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [stage, req.params.id]);
 
     // Auto-log stage change to contact history
+    const isClosed = stage === 'Closed Won' || stage === 'Closed Lost';
+    const outcome = (isClosed && reason) ? reason : `Stage: ${stage}`;
     await db.run(`
       INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
       VALUES ($1, 'Other', $2, $3)
-    `, [req.params.id, `Stage changed from "${oldStage}" to "${stage}"`, `Stage: ${stage}`]);
+    `, [req.params.id, `Stage changed from "${oldStage}" to "${stage}"`, outcome]);
 
     const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
     res.json(updatedLead);

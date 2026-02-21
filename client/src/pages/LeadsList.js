@@ -18,7 +18,8 @@ import {
   FaTimes
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import CloseReasonModal from '../components/CloseReasonModal';
 
 function LeadsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -31,6 +32,7 @@ function LeadsList() {
   const [deleteConfirm, setDeleteConfirm] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [selectAll, setSelectAll] = useState(false);
+  const [pendingBulkClose, setPendingBulkClose] = useState(null);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -89,10 +91,18 @@ function LeadsList() {
     setSelectAll(false);
   };
 
-  const handleBulkStage = async (stage) => {
+  const initiateBulkStage = (stage) => {
+    if (stage === 'Closed Won' || stage === 'Closed Lost') {
+      setPendingBulkClose(stage);
+    } else {
+      handleBulkStage(stage);
+    }
+  };
+
+  const handleBulkStage = async (stage, reason) => {
     const ids = [...selectedIds];
     try {
-      await leadsApi.bulkUpdateStage(ids, stage);
+      await leadsApi.bulkUpdateStage(ids, stage, reason);
       toast.success(`Updated ${ids.length} leads to "${stage}"`);
       setSelectedIds(new Set());
       setSelectAll(false);
@@ -234,6 +244,7 @@ function LeadsList() {
             <option value="dispensary_name-ASC">Name A-Z</option>
             <option value="dispensary_name-DESC">Name Z-A</option>
             <option value="deal_value-DESC">Highest Value</option>
+            <option value="lead_score-DESC">Highest Score</option>
           </select>
         </div>
 
@@ -275,6 +286,7 @@ function LeadsList() {
                     Dispensary <FaSort />
                   </th>
                   <th>Stage</th>
+                  <th>Score</th>
                   <th>Name</th>
                   <th>Location</th>
                   <th>Deal Value</th>
@@ -313,6 +325,19 @@ function LeadsList() {
                         }}
                       >
                         {lead.stage || 'New Lead'}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '50px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        background: getScoreBg(lead.lead_score || 0),
+                        color: getScoreColor(lead.lead_score || 0)
+                      }}>
+                        {lead.lead_score || 0} {getScoreLabel(lead.lead_score || 0)}
                       </span>
                     </td>
                     <td>
@@ -402,7 +427,7 @@ function LeadsList() {
           <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
             <select
               defaultValue=""
-              onChange={(e) => { if (e.target.value) handleBulkStage(e.target.value); e.target.value = ''; }}
+              onChange={(e) => { if (e.target.value) initiateBulkStage(e.target.value); e.target.value = ''; }}
               style={{ padding: '0.375rem 0.75rem', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(255,255,255,0.15)', color: 'white', fontSize: '0.875rem' }}
             >
               <option value="" disabled>Change Stage...</option>
@@ -417,6 +442,18 @@ function LeadsList() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Close Reason Modal */}
+      {pendingBulkClose && (
+        <CloseReasonModal
+          stage={pendingBulkClose}
+          onConfirm={(reason) => {
+            handleBulkStage(pendingBulkClose, reason);
+            setPendingBulkClose(null);
+          }}
+          onCancel={() => setPendingBulkClose(null)}
+        />
       )}
 
       {/* Delete Confirmation Modal */}
