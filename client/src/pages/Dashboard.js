@@ -9,9 +9,15 @@ import {
   FaTasks,
   FaExclamationTriangle,
   FaExchangeAlt,
-  FaRegClock
+  FaRegClock,
+  FaEnvelope,
+  FaChartLine,
+  FaArrowUp,
+  FaArrowDown,
+  FaCalendarCheck,
+  FaTimes
 } from 'react-icons/fa';
-import { leadsApi, tasksApi } from '../services/api';
+import { leadsApi, tasksApi, emailApi } from '../services/api';
 import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 import QuickLogModal from '../components/QuickLogModal';
 import ClickToCall from '../components/ClickToCall';
@@ -21,6 +27,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [showOverdue, setShowOverdue] = useState(true);
   const [quickLog, setQuickLog] = useState(null);
+  const [scheduledEmails, setScheduledEmails] = useState([]);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
@@ -28,8 +35,12 @@ function Dashboard() {
   const fetchBriefing = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await leadsApi.getBriefing();
-      setBriefing(res.data);
+      const [briefRes, schedRes] = await Promise.all([
+        leadsApi.getBriefing(),
+        emailApi.getScheduled().catch(() => ({ data: [] }))
+      ]);
+      setBriefing(briefRes.data);
+      setScheduledEmails(schedRes.data);
     } catch (error) {
       console.error('Error fetching briefing:', error);
       toast.error('Failed to load briefing');
@@ -37,6 +48,23 @@ function Dashboard() {
       setLoading(false);
     }
   }, []);
+
+  const handleCancelScheduled = async (id) => {
+    try {
+      await emailApi.cancelScheduled(id);
+      toast.success('Scheduled email cancelled');
+      setScheduledEmails(prev => prev.filter(e => e.id !== id));
+    } catch (error) {
+      console.error('Error cancelling scheduled email:', error);
+      toast.error('Failed to cancel scheduled email');
+    }
+  };
+
+  const getTrend = (thisWeek, lastWeek) => {
+    if (thisWeek > lastWeek) return { icon: FaArrowUp, color: '#198754', label: 'up' };
+    if (thisWeek < lastWeek) return { icon: FaArrowDown, color: '#dc3545', label: 'down' };
+    return { icon: FaArrowRight, color: '#6c757d', label: 'same' };
+  };
 
   useEffect(() => {
     fetchBriefing();
@@ -83,8 +111,78 @@ function Dashboard() {
   const overdueCount = (briefing?.overdueTasks || []).length;
   const todayCount = (briefing?.todayTasks || []).length;
 
+  const callsTrend = briefing ? getTrend(briefing.callsThisWeek, briefing.callsLastWeek) : null;
+  const emailsTrend = briefing ? getTrend(briefing.emailsThisWeek, briefing.emailsLastWeek) : null;
+  const dealsTrend = briefing ? getTrend(briefing.dealsMovedThisWeek, briefing.dealsMovedLastWeek) : null;
+
   return (
     <div className="dashboard">
+      {/* Your Activity */}
+      {briefing && (
+        <div className="callbacks-section">
+          <h2><FaChartLine /> Your Activity This Week</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '0.5rem 0' }}>
+            {[
+              { label: 'Calls', count: briefing.callsThisWeek, last: briefing.callsLastWeek, trend: callsTrend, icon: FaPhoneAlt },
+              { label: 'Emails', count: briefing.emailsThisWeek, last: briefing.emailsLastWeek, trend: emailsTrend, icon: FaEnvelope },
+              { label: 'Deals Moved', count: briefing.dealsMovedThisWeek, last: briefing.dealsMovedLastWeek, trend: dealsTrend, icon: FaExchangeAlt },
+            ].map((stat) => {
+              const TrendIcon = stat.trend?.icon || FaArrowRight;
+              return (
+                <div key={stat.label} style={{
+                  background: '#f8f9fa',
+                  borderRadius: '10px',
+                  padding: '1rem',
+                  textAlign: 'center',
+                  border: '1px solid #e9ecef'
+                }}>
+                  <stat.icon style={{ color: '#2d5a27', marginBottom: '0.25rem' }} />
+                  <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#212529' }}>
+                    {stat.count}
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', color: '#6c757d', marginBottom: '0.25rem' }}>
+                    {stat.label}
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: stat.trend?.color, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
+                    <TrendIcon size={10} />
+                    {stat.last} last week
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Scheduled Emails */}
+      {scheduledEmails.length > 0 && (
+        <div className="callbacks-section">
+          <h2><FaCalendarCheck /> Scheduled Emails ({scheduledEmails.length})</h2>
+          <div className="callback-list">
+            {scheduledEmails.map((se) => (
+              <div key={se.id} className="callback-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div style={{ flex: 1 }}>
+                  <h4 style={{ margin: 0 }}>{se.dispensary_name || `Lead #${se.lead_id}`}</h4>
+                  <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: '#6c757d' }}>
+                    {se.template_name || 'Template'} — {se.scheduled_for ? format(new Date(se.scheduled_for), 'MMM d, h:mm a') : 'Pending'}
+                  </p>
+                </div>
+                {se.status === 'pending' && (
+                  <button
+                    className="btn btn-sm btn-outline"
+                    style={{ color: '#dc3545', borderColor: '#dc3545', marginLeft: '0.5rem' }}
+                    onClick={() => handleCancelScheduled(se.id)}
+                    title="Cancel"
+                  >
+                    <FaTimes />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Today's Callbacks */}
       <div className="callbacks-section">
         <h2>

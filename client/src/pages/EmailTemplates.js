@@ -5,6 +5,15 @@ import { emailTemplatesApi } from '../services/api';
 
 const CATEGORIES = ['General', 'Intro', 'Follow-Up', 'Proposal', 'Demo'];
 
+const CADENCE_STEPS = [
+  { step: 0, label: 'Not started' },
+  { step: 1, label: 'Intro sent' },
+  { step: 2, label: 'Follow-up 1' },
+  { step: 3, label: 'Follow-up 2' },
+  { step: 4, label: 'Follow-up 3' },
+  { step: 5, label: 'Break-up email' },
+];
+
 const CATEGORY_COLORS = {
   'General': { bg: '#e9ecef', color: '#495057' },
   'Intro': { bg: '#d4edda', color: '#155724' },
@@ -25,7 +34,9 @@ function EmailTemplates() {
     name: '',
     subject: '',
     body: '',
-    category: 'General'
+    category: 'General',
+    cadence_step: '',
+    delay_days: 0
   });
 
   const fetchTemplates = useCallback(async () => {
@@ -46,7 +57,7 @@ function EmailTemplates() {
 
   const openCreate = () => {
     setEditingTemplate(null);
-    setForm({ name: '', subject: '', body: '', category: 'General' });
+    setForm({ name: '', subject: '', body: '', category: 'General', cadence_step: '', delay_days: 0 });
     setShowModal(true);
   };
 
@@ -56,7 +67,9 @@ function EmailTemplates() {
       name: template.name,
       subject: template.subject,
       body: template.body,
-      category: template.category || 'General'
+      category: template.category || 'General',
+      cadence_step: template.cadence_step ?? '',
+      delay_days: template.delay_days || 0
     });
     setShowModal(true);
   };
@@ -84,11 +97,16 @@ function EmailTemplates() {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const payload = {
+        ...form,
+        cadence_step: form.cadence_step === '' ? null : parseInt(form.cadence_step, 10),
+        delay_days: parseInt(form.delay_days, 10) || 0,
+      };
       if (editingTemplate) {
-        await emailTemplatesApi.update(editingTemplate.id, form);
+        await emailTemplatesApi.update(editingTemplate.id, payload);
         toast.success('Template updated');
       } else {
-        await emailTemplatesApi.create(form);
+        await emailTemplatesApi.create(payload);
         toast.success('Template created');
       }
       setShowModal(false);
@@ -145,6 +163,12 @@ function EmailTemplates() {
                   <p style={{ fontSize: '0.8125rem', color: '#495057', margin: '0 0 0.5rem', fontWeight: 500 }}>
                     Subject: {template.subject}
                   </p>
+                  {template.cadence_step != null && (
+                    <p style={{ fontSize: '0.75rem', color: '#7b1fa2', margin: '0 0 0.5rem', fontWeight: 500 }}>
+                      Cadence Step {template.cadence_step}: {CADENCE_STEPS.find(s => s.step === template.cadence_step)?.label || `Step ${template.cadence_step}`}
+                      {template.delay_days > 0 && ` (+${template.delay_days}d delay)`}
+                    </p>
+                  )}
                   <p style={{ fontSize: '0.8125rem', color: '#6c757d', margin: '0 0 1rem', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
                     {template.body}
                   </p>
@@ -206,6 +230,31 @@ function EmailTemplates() {
                         <option key={cat} value={cat}>{cat}</option>
                       ))}
                     </select>
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                  <div className="form-group">
+                    <label>Cadence Step</label>
+                    <select
+                      value={form.cadence_step}
+                      onChange={(e) => setForm(prev => ({ ...prev, cadence_step: e.target.value }))}
+                    >
+                      <option value="">None</option>
+                      {CADENCE_STEPS.filter(s => s.step > 0).map(s => (
+                        <option key={s.step} value={s.step}>Step {s.step}: {s.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>Delay (days after advance)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="30"
+                      value={form.delay_days}
+                      onChange={(e) => setForm(prev => ({ ...prev, delay_days: e.target.value }))}
+                      disabled={form.cadence_step === ''}
+                    />
                   </div>
                 </div>
                 <div className="form-group" style={{ marginTop: '1rem' }}>

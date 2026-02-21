@@ -17,13 +17,15 @@ import {
   FaDownload,
   FaUpload,
   FaTimes,
-  FaExclamationTriangle
+  FaExclamationTriangle,
+  FaCopy
 } from 'react-icons/fa';
 import { leadsApi, emailApi, emailTemplatesApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 import QuickLogModal from '../components/QuickLogModal';
 import ClickToCall from '../components/ClickToCall';
+import DuplicateMergeModal from '../components/DuplicateMergeModal';
 
 function LeadsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -43,6 +45,7 @@ function LeadsList() {
   const [batchSelectedTemplate, setBatchSelectedTemplate] = useState(null);
   const [batchStep, setBatchStep] = useState(1);
   const [batchSending, setBatchSending] = useState(false);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -234,6 +237,9 @@ function LeadsList() {
         <div className="leads-header">
           <h2>Sales Leads</h2>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button onClick={() => setShowDuplicateModal(true)} className="btn btn-outline">
+              <FaCopy /> Find Duplicates
+            </button>
             <Link to="/import" className="btn btn-outline">
               <FaUpload /> Import
             </Link>
@@ -566,6 +572,14 @@ function LeadsList() {
           dispensaryName={quickLog.name}
           onClose={() => setQuickLog(null)}
           onSaved={() => { setQuickLog(null); fetchLeads(); }}
+        />
+      )}
+
+      {/* Duplicate Merge Modal */}
+      {showDuplicateModal && (
+        <DuplicateMergeModal
+          onClose={() => setShowDuplicateModal(false)}
+          onMerged={() => { setShowDuplicateModal(false); fetchLeads(); }}
         />
       )}
 

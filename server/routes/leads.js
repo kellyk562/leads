@@ -2,6 +2,8 @@ const express = require('express');
 const { body, validationResult, param, query } = require('express-validator');
 const db = require('../database/init');
 
+const { processScheduledEmails } = require('./email');
+
 const router = express.Router();
 
 const VALID_STAGES = ['New Lead', 'Contacted', 'Demo Scheduled', 'Demo Completed', 'Proposal Sent', 'Negotiating', 'Closed Won', 'Closed Lost'];
@@ -88,11 +90,16 @@ router.get('/', async (req, res) => {
 // Get daily briefing data (all-in-one dashboard endpoint)
 router.get('/briefing', async (req, res) => {
   try {
+    // Process any pending scheduled emails
+    await processScheduledEmails().catch(err => console.error('processScheduledEmails error:', err));
+
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = req.query.day && days.includes(req.query.day) ? req.query.day : days[new Date().getDay()];
     const todayDate = new Date().toISOString().split('T')[0];
 
-    const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves] = await Promise.all([
+    const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
+           callsThisWeekRow, callsLastWeekRow, emailsThisWeekRow, emailsLastWeekRow,
+           dealsMovedThisWeekRow, dealsMovedLastWeekRow] = await Promise.all([
       // Today's callbacks
       db.all(`
         SELECT * FROM leads
@@ -137,10 +144,57 @@ router.get('/briefing', async (req, res) => {
           AND ch.contact_date >= NOW() - INTERVAL '7 days'
         ORDER BY ch.contact_date DESC
         LIMIT 10
+      `),
+      // Activity metrics: calls this week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE contact_method = 'Phone'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      // Activity metrics: calls last week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE contact_method = 'Phone'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
+          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      // Activity metrics: emails this week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE contact_method = 'Email'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      // Activity metrics: emails last week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE contact_method = 'Email'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
+          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      // Activity metrics: deals moved this week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE notes LIKE 'Stage changed%'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+      `),
+      // Activity metrics: deals moved last week
+      db.get(`
+        SELECT COUNT(*) AS count FROM contact_history
+        WHERE notes LIKE 'Stage changed%'
+          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
+          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
       `)
     ]);
 
-    res.json({ todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves });
+    res.json({
+      todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
+      callsThisWeek: parseInt(callsThisWeekRow?.count || 0),
+      callsLastWeek: parseInt(callsLastWeekRow?.count || 0),
+      emailsThisWeek: parseInt(emailsThisWeekRow?.count || 0),
+      emailsLastWeek: parseInt(emailsLastWeekRow?.count || 0),
+      dealsMovedThisWeek: parseInt(dealsMovedThisWeekRow?.count || 0),
+      dealsMovedLastWeek: parseInt(dealsMovedLastWeekRow?.count || 0),
+    });
   } catch (error) {
     console.error('Error fetching briefing:', error);
     res.status(500).json({ error: 'Failed to fetch briefing data' });
@@ -476,6 +530,158 @@ router.post('/check-duplicates', async (req, res) => {
   } catch (error) {
     console.error('Error checking duplicates:', error);
     res.status(500).json({ error: 'Failed to check duplicates' });
+  }
+});
+
+// Find duplicate leads by name/phone/email
+router.get('/duplicates', async (req, res) => {
+  try {
+    // Find groups that share normalized name, phone, or email
+    const groups = [];
+
+    // Duplicates by name
+    const nameGroups = await db.all(`
+      SELECT LOWER(TRIM(dispensary_name)) AS norm_name, ARRAY_AGG(id) AS ids
+      FROM leads
+      WHERE dispensary_name IS NOT NULL AND TRIM(dispensary_name) != ''
+      GROUP BY LOWER(TRIM(dispensary_name))
+      HAVING COUNT(*) > 1
+    `);
+    for (const g of nameGroups) {
+      groups.push({ matchField: 'name', matchValue: g.norm_name, leadIds: g.ids });
+    }
+
+    // Duplicates by phone
+    const phoneGroups = await db.all(`
+      SELECT REGEXP_REPLACE(contact_number, '[^0-9]', '', 'g') AS norm_phone, ARRAY_AGG(id) AS ids
+      FROM leads
+      WHERE contact_number IS NOT NULL AND TRIM(contact_number) != ''
+        AND LENGTH(REGEXP_REPLACE(contact_number, '[^0-9]', '', 'g')) >= 7
+      GROUP BY REGEXP_REPLACE(contact_number, '[^0-9]', '', 'g')
+      HAVING COUNT(*) > 1
+    `);
+    for (const g of phoneGroups) {
+      groups.push({ matchField: 'phone', matchValue: g.norm_phone, leadIds: g.ids });
+    }
+
+    // Duplicates by email
+    const emailGroups = await db.all(`
+      SELECT LOWER(TRIM(contact_email)) AS norm_email, ARRAY_AGG(id) AS ids
+      FROM leads
+      WHERE contact_email IS NOT NULL AND TRIM(contact_email) != ''
+      GROUP BY LOWER(TRIM(contact_email))
+      HAVING COUNT(*) > 1
+    `);
+    for (const g of emailGroups) {
+      groups.push({ matchField: 'email', matchValue: g.norm_email, leadIds: g.ids });
+    }
+
+    // Deduplicate groups - merge groups that share lead IDs
+    const seen = new Set();
+    const dedupedGroups = [];
+    for (const g of groups) {
+      const key = g.leadIds.sort().join(',');
+      if (!seen.has(key)) {
+        seen.add(key);
+        dedupedGroups.push(g);
+      }
+    }
+
+    // Fetch full lead data for each group
+    const result = [];
+    for (const group of dedupedGroups) {
+      const leads = await db.all(
+        `SELECT * FROM leads WHERE id = ANY($1::int[])`,
+        [group.leadIds]
+      );
+      result.push({ matchField: group.matchField, matchValue: group.matchValue, leads });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error finding duplicates:', error);
+    res.status(500).json({ error: 'Failed to find duplicates' });
+  }
+});
+
+// Merge two leads
+router.post('/merge', async (req, res) => {
+  const client = await db.pool.connect();
+  try {
+    const { keepId, mergeId, fieldsFromMerge } = req.body;
+
+    if (!keepId || !mergeId || keepId === mergeId) {
+      return res.status(400).json({ error: 'keepId and mergeId are required and must be different' });
+    }
+
+    const keepLead = await client.query('SELECT * FROM leads WHERE id = $1', [keepId]);
+    const mergeLead = await client.query('SELECT * FROM leads WHERE id = $1', [mergeId]);
+
+    if (!keepLead.rows[0] || !mergeLead.rows[0]) {
+      return res.status(404).json({ error: 'One or both leads not found' });
+    }
+
+    await client.query('BEGIN');
+
+    // Copy selected fields from merge lead to keep lead
+    if (Array.isArray(fieldsFromMerge) && fieldsFromMerge.length > 0) {
+      const allowedFields = [
+        'dispensary_name', 'address', 'city', 'state', 'zip_code',
+        'dispensary_number', 'contact_name', 'contact_position',
+        'manager_name', 'owner_name', 'contact_number', 'contact_email',
+        'website', 'license_number', 'current_pos_system', 'estimated_revenue',
+        'number_of_locations', 'notes', 'callback_days', 'callback_time_slots',
+        'callback_time_from', 'callback_time_to', 'priority', 'stage',
+        'deal_value', 'callback_date', 'source'
+      ];
+      const validFields = fieldsFromMerge.filter(f => allowedFields.includes(f));
+      if (validFields.length > 0) {
+        const setClauses = validFields.map((f, i) => `${f} = $${i + 1}`).join(', ');
+        const values = validFields.map(f => mergeLead.rows[0][f]);
+        await client.query(
+          `UPDATE leads SET ${setClauses}, updated_at = CURRENT_TIMESTAMP WHERE id = $${validFields.length + 1}`,
+          [...values, keepId]
+        );
+      }
+    }
+
+    // Reassign contact_history
+    await client.query(
+      'UPDATE contact_history SET lead_id = $1 WHERE lead_id = $2',
+      [keepId, mergeId]
+    );
+
+    // Reassign tasks
+    await client.query(
+      'UPDATE tasks SET lead_id = $1 WHERE lead_id = $2',
+      [keepId, mergeId]
+    );
+
+    // Reassign scheduled_emails
+    await client.query(
+      'UPDATE scheduled_emails SET lead_id = $1 WHERE lead_id = $2',
+      [keepId, mergeId]
+    );
+
+    // Log merge event
+    await client.query(`
+      INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+      VALUES ($1, 'Other', $2, 'Merge completed')
+    `, [keepId, `Merged with "${mergeLead.rows[0].dispensary_name}" (ID ${mergeId})`]);
+
+    // Delete the merged lead
+    await client.query('DELETE FROM leads WHERE id = $1', [mergeId]);
+
+    await client.query('COMMIT');
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [keepId]);
+    res.json(updatedLead);
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Error merging leads:', error);
+    res.status(500).json({ error: 'Failed to merge leads' });
+  } finally {
+    client.release();
   }
 });
 
@@ -823,8 +1029,24 @@ router.patch('/:id/cadence-step', [
       VALUES ($1, 'Other', $2, $3)
     `, [req.params.id, `Cadence advanced to Step ${step}: ${label}`, `Cadence: ${label}`]);
 
+    // Auto-schedule email if a template is mapped to this cadence step
+    let scheduledEmail = null;
+    const template = await db.get(
+      `SELECT * FROM email_templates WHERE cadence_step = $1 LIMIT 1`,
+      [step]
+    );
+    if (template) {
+      const delayDays = template.delay_days || 0;
+      const result = await db.run(`
+        INSERT INTO scheduled_emails (lead_id, template_id, cadence_step, scheduled_for)
+        VALUES ($1, $2, $3, NOW() + ($4 || ' days')::INTERVAL)
+        RETURNING id
+      `, [req.params.id, template.id, step, delayDays]);
+      scheduledEmail = await db.get('SELECT * FROM scheduled_emails WHERE id = $1', [result.lastInsertRowid]);
+    }
+
     const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
-    res.json(updatedLead);
+    res.json({ ...updatedLead, scheduledEmail });
   } catch (error) {
     console.error('Error updating cadence step:', error);
     res.status(500).json({ error: 'Failed to update cadence step' });

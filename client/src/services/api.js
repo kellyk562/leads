@@ -70,6 +70,12 @@ export const leadsApi = {
     return api.get('/leads/briefing', { params: { day: todayDay } });
   },
 
+  // Get duplicate lead groups
+  getDuplicates: () => api.get('/leads/duplicates'),
+
+  // Merge two leads
+  mergeLeads: (keepId, mergeId, fieldsFromMerge) => api.post('/leads/merge', { keepId, mergeId, fieldsFromMerge }),
+
 };
 
 // Tasks API
@@ -98,6 +104,8 @@ export const emailApi = {
   testConnection: () => api.post('/email/test'),
   send: (data) => api.post('/email/send', data),
   sendBatch: (leadIds, templateId) => api.post('/email/batch', { leadIds, templateId }),
+  getScheduled: () => api.get('/email/scheduled'),
+  cancelScheduled: (id) => api.delete(`/email/scheduled/${id}`),
 };
 
 export default api;

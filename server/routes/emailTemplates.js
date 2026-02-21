@@ -49,12 +49,12 @@ router.post('/', [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, subject, body: templateBody, category } = req.body;
+    const { name, subject, body: templateBody, category, cadence_step, delay_days } = req.body;
 
     const result = await db.run(
-      `INSERT INTO email_templates (name, subject, body, category)
-       VALUES ($1, $2, $3, $4) RETURNING id`,
-      [name, subject, templateBody, category || 'General']
+      `INSERT INTO email_templates (name, subject, body, category, cadence_step, delay_days)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+      [name, subject, templateBody, category || 'General', cadence_step ?? null, delay_days ?? 0]
     );
 
     const newTemplate = await db.get('SELECT * FROM email_templates WHERE id = $1', [result.lastInsertRowid]);
@@ -84,12 +84,13 @@ router.put('/:id', [
       return res.status(404).json({ error: 'Template not found' });
     }
 
-    const { name, subject, body: templateBody, category } = req.body;
+    const { name, subject, body: templateBody, category, cadence_step, delay_days } = req.body;
 
     await db.run(
-      `UPDATE email_templates SET name = $1, subject = $2, body = $3, category = $4, updated_at = CURRENT_TIMESTAMP
-       WHERE id = $5`,
-      [name, subject, templateBody, category || 'General', req.params.id]
+      `UPDATE email_templates SET name = $1, subject = $2, body = $3, category = $4,
+       cadence_step = $5, delay_days = $6, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $7`,
+      [name, subject, templateBody, category || 'General', cadence_step ?? null, delay_days ?? 0, req.params.id]
     );
 
     const updated = await db.get('SELECT * FROM email_templates WHERE id = $1', [req.params.id]);

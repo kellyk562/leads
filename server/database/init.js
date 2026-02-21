@@ -215,6 +215,50 @@ async function initDatabase() {
       END $$;
     `);
 
+    // Add cadence_step column to email_templates (auto-email sequences)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'email_templates' AND column_name = 'cadence_step'
+        ) THEN
+          ALTER TABLE email_templates ADD COLUMN cadence_step INTEGER;
+        END IF;
+      END $$;
+    `);
+
+    // Add delay_days column to email_templates
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'email_templates' AND column_name = 'delay_days'
+        ) THEN
+          ALTER TABLE email_templates ADD COLUMN delay_days INTEGER DEFAULT 0;
+        END IF;
+      END $$;
+    `);
+
+    // Create scheduled_emails table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_emails (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+        template_id INTEGER NOT NULL REFERENCES email_templates(id) ON DELETE CASCADE,
+        cadence_step INTEGER NOT NULL,
+        scheduled_for TIMESTAMP NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        sent_at TIMESTAMP,
+        error TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_scheduled_emails_status ON scheduled_emails(status, scheduled_for)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_scheduled_emails_lead_id ON scheduled_emails(lead_id)`);
+
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
