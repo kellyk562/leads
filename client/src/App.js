@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, NavLink, Link, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
-import { FaPlus, FaCannabis } from 'react-icons/fa';
+import { FaPlus, FaRocket } from 'react-icons/fa';
 import 'react-toastify/dist/ReactToastify.css';
 
 import Dashboard from './pages/Dashboard';
@@ -20,7 +20,7 @@ function AppHeader() {
     <header className="header">
       <div className="header-content">
         <Link to="/" className="logo">
-          <FaCannabis className="logo-icon" />
+          <FaRocket className="logo-icon" />
           <h1>Leads</h1>
         </Link>
         <nav className="nav-links">
