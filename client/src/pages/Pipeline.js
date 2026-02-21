@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 
 function Pipeline() {

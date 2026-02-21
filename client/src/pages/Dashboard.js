@@ -9,7 +9,6 @@ import {
   FaTasks,
   FaExclamationTriangle,
   FaExchangeAlt,
-  FaEye,
   FaRegClock
 } from 'react-icons/fa';
 import { leadsApi, tasksApi } from '../services/api';
