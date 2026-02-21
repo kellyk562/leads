@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Routes, Route, NavLink, Link, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import { FaPlus, FaCannabis } from 'react-icons/fa';
@@ -13,6 +13,7 @@ import Tasks from './pages/Tasks';
 import EmailTemplates from './pages/EmailTemplates';
 import Analytics from './pages/Analytics';
 import ImportLeads from './pages/ImportLeads';
+import QuickLogModal from './components/QuickLogModal';
 
 function AppHeader() {
   return (
@@ -38,6 +39,37 @@ function AppHeader() {
 }
 
 function App() {
+  const [callPrompt, setCallPrompt] = useState(null);
+
+  const checkPendingCall = useCallback(() => {
+    try {
+      const raw = sessionStorage.getItem('pendingCall');
+      if (!raw) return;
+      const pending = JSON.parse(raw);
+      const elapsed = Date.now() - pending.calledAt;
+      // Only prompt if the user was away 5s–60min (likely made a real call)
+      if (elapsed >= 5000 && elapsed <= 3600000) {
+        sessionStorage.removeItem('pendingCall');
+        setCallPrompt(pending);
+      } else if (elapsed > 3600000) {
+        // Stale — discard silently
+        sessionStorage.removeItem('pendingCall');
+      }
+    } catch {
+      sessionStorage.removeItem('pendingCall');
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        checkPendingCall();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [checkPendingCall]);
+
   return (
     <>
       <div className="app-container">
@@ -59,6 +91,16 @@ function App() {
           </Routes>
         </main>
       </div>
+
+      {/* Auto-log prompt after returning from a phone call */}
+      {callPrompt && (
+        <QuickLogModal
+          leadId={callPrompt.leadId}
+          dispensaryName={callPrompt.dispensaryName}
+          onClose={() => setCallPrompt(null)}
+          onSaved={() => setCallPrompt(null)}
+        />
+      )}
 
       <ToastContainer
         position="top-right"

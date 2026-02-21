@@ -15,6 +15,7 @@ import {
 import { leadsApi, tasksApi } from '../services/api';
 import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 import QuickLogModal from '../components/QuickLogModal';
+import ClickToCall from '../components/ClickToCall';
 
 function Dashboard() {
   const [briefing, setBriefing] = useState(null);
@@ -103,8 +104,10 @@ function Dashboard() {
                     <h4>{lead.dispensary_name}</h4>
                     {lead.manager_name && <p>{lead.manager_name}</p>}
                     {lead.contact_number && (
-                      <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
-                        {lead.contact_number}
+                      <p style={{ fontSize: '0.85rem', margin: '0.25rem 0 0' }}>
+                        <ClickToCall phone={lead.contact_number} leadId={lead.id} dispensaryName={lead.dispensary_name}>
+                          <FaPhoneAlt size={10} /> {lead.contact_number}
+                        </ClickToCall>
                       </p>
                     )}
                   </div>

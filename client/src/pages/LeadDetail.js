@@ -22,6 +22,7 @@ import {
 import { leadsApi, tasksApi, emailTemplatesApi, emailApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, CADENCE_STEPS, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
+import ClickToCall from '../components/ClickToCall';
 
 const formatCurrency = (value) => {
   if (!value && value !== 0) return null;
@@ -673,9 +674,9 @@ function LeadDetail() {
                 <span>
                   {lead.dispensary_number ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <a href={`tel:${lead.dispensary_number}`} style={{ color: '#2d5a27' }}>
+                      <ClickToCall phone={lead.dispensary_number} leadId={lead.id} dispensaryName={lead.dispensary_name}>
                         <FaPhone size={12} /> {formatPhoneNumber(lead.dispensary_number)}
-                      </a>
+                      </ClickToCall>
                       <button
                         onClick={() => copyToClipboard(lead.dispensary_number)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6c757d', padding: '0.25rem' }}
@@ -692,9 +693,9 @@ function LeadDetail() {
                 <span>
                   {lead.contact_number ? (
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <a href={`tel:${lead.contact_number}`} style={{ color: '#2d5a27' }}>
+                      <ClickToCall phone={lead.contact_number} leadId={lead.id} dispensaryName={lead.dispensary_name}>
                         <FaPhone size={12} /> {formatPhoneNumber(lead.contact_number)}
-                      </a>
+                      </ClickToCall>
                       <button
                         onClick={() => copyToClipboard(lead.contact_number)}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6c757d', padding: '0.25rem' }}

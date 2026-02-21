@@ -23,6 +23,7 @@ import { leadsApi, emailApi, emailTemplatesApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 import QuickLogModal from '../components/QuickLogModal';
+import ClickToCall from '../components/ClickToCall';
 
 function LeadsList() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -409,8 +410,10 @@ function LeadsList() {
                           </div>
                         )}
                         {lead.contact_number && (
-                          <div style={{ color: '#6c757d' }}>
-                            <FaPhone size={10} /> {lead.contact_number}
+                          <div>
+                            <ClickToCall phone={lead.contact_number} leadId={lead.id} dispensaryName={lead.dispensary_name}>
+                              <FaPhone size={10} /> {lead.contact_number}
+                            </ClickToCall>
                           </div>
                         )}
                         {lead.contact_email && (
