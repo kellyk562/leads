@@ -18,7 +18,7 @@ import {
   FaTimes
 } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 
 function LeadsList() {
@@ -287,6 +287,7 @@ function LeadsList() {
                   </th>
                   <th>Stage</th>
                   <th>Score</th>
+                  <th>Cadence</th>
                   <th>Name</th>
                   <th>Location</th>
                   <th>Deal Value</th>
@@ -338,6 +339,19 @@ function LeadsList() {
                         color: getScoreColor(lead.lead_score || 0)
                       }}>
                         {lead.lead_score || 0} {getScoreLabel(lead.lead_score || 0)}
+                      </span>
+                    </td>
+                    <td>
+                      <span style={{
+                        display: 'inline-block',
+                        padding: '0.2rem 0.6rem',
+                        borderRadius: '50px',
+                        fontSize: '0.75rem',
+                        fontWeight: 600,
+                        background: (lead.cadence_step || 0) > 0 ? '#f3e5f5' : '#e9ecef',
+                        color: (lead.cadence_step || 0) > 0 ? '#7b1fa2' : '#6c757d'
+                      }}>
+                        {getCadenceLabel(lead.cadence_step || 0)}
                       </span>
                     </td>
                     <td>

@@ -4,9 +4,60 @@ const db = require('../database/init');
 
 const router = express.Router();
 
+// Stage-based follow-up intervals (days)
+const STAGE_INTERVALS = {
+  'New Lead': 3,
+  'Contacted': 5,
+  'Demo Scheduled': 2,
+  'Demo Completed': 3,
+  'Proposal Sent': 5,
+  'Negotiating': 7,
+};
+
+// Auto-generate follow-up reminder tasks for stale leads
+async function generateAutoReminders() {
+  try {
+    const leads = await db.all(`
+      SELECT l.id, l.dispensary_name, l.stage,
+        COALESCE(MAX(ch.contact_date), l.created_at) AS last_activity,
+        EXTRACT(DAY FROM NOW() - COALESCE(MAX(ch.contact_date), l.created_at))::INTEGER AS days_inactive
+      FROM leads l
+      LEFT JOIN contact_history ch ON ch.lead_id = l.id
+      WHERE l.stage NOT IN ('Closed Won', 'Closed Lost')
+        AND NOT EXISTS (
+          SELECT 1 FROM tasks t
+          WHERE t.lead_id = l.id AND t.source = 'auto_reminder' AND t.status = 'pending'
+        )
+      GROUP BY l.id, l.dispensary_name, l.stage, l.created_at
+    `);
+
+    let created = 0;
+    for (const lead of leads) {
+      const threshold = STAGE_INTERVALS[lead.stage] || 5;
+      if (lead.days_inactive >= threshold) {
+        await db.run(`
+          INSERT INTO tasks (lead_id, title, description, due_date, priority, source)
+          VALUES ($1, $2, $3, CURRENT_DATE, 'High', 'auto_reminder')
+          RETURNING id
+        `, [
+          lead.id,
+          `Follow up with ${lead.dispensary_name}`,
+          `No contact logged in ${lead.days_inactive} days (stage: ${lead.stage})`
+        ]);
+        created++;
+      }
+    }
+    return created;
+  } catch (error) {
+    console.error('Error generating auto reminders:', error);
+    return 0;
+  }
+}
+
 // Get all tasks with optional filtering
 router.get('/', async (req, res) => {
   try {
+    await generateAutoReminders();
     const { status, priority, lead_id, period } = req.query;
 
     let sql = `
@@ -57,6 +108,7 @@ router.get('/', async (req, res) => {
 // Get task stats
 router.get('/stats', async (req, res) => {
   try {
+    await generateAutoReminders();
     const overdue = await db.get(`
       SELECT COUNT(*) as count FROM tasks
       WHERE due_date < CURRENT_DATE AND status = 'pending'

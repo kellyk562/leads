@@ -20,7 +20,7 @@ import {
   FaPaperPlane
 } from 'react-icons/fa';
 import { leadsApi, tasksApi, emailTemplatesApi, emailApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, CADENCE_STEPS, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 
 const formatCurrency = (value) => {
@@ -549,6 +549,52 @@ function LeadDetail() {
                 Score: {lead.lead_score || 0} ({getScoreLabel(lead.lead_score || 0)})
               </span>
             )}
+            {/* Cadence Step Indicator */}
+            <div style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.375rem',
+              marginTop: '0.25rem',
+              marginLeft: '0.5rem',
+              padding: '0.2rem 0.5rem',
+              borderRadius: '50px',
+              background: '#f3e5f5',
+              color: '#7b1fa2',
+              fontSize: '0.8125rem',
+              fontWeight: 600
+            }}>
+              <button
+                onClick={async () => {
+                  const newStep = Math.max(0, (lead.cadence_step || 0) - 1);
+                  try {
+                    await leadsApi.updateCadenceStep(id, newStep);
+                    fetchLead();
+                  } catch { toast.error('Failed to update cadence step'); }
+                }}
+                disabled={(lead.cadence_step || 0) === 0}
+                style={{
+                  background: 'none', border: 'none', cursor: (lead.cadence_step || 0) === 0 ? 'default' : 'pointer',
+                  color: (lead.cadence_step || 0) === 0 ? '#ccc' : '#7b1fa2', padding: 0, fontSize: '0.75rem', fontWeight: 700, lineHeight: 1
+                }}
+                title="Previous step"
+              >&#9664;</button>
+              <span>{getCadenceLabel(lead.cadence_step || 0)}</span>
+              <button
+                onClick={async () => {
+                  const newStep = Math.min(CADENCE_STEPS.length - 1, (lead.cadence_step || 0) + 1);
+                  try {
+                    await leadsApi.updateCadenceStep(id, newStep);
+                    fetchLead();
+                  } catch { toast.error('Failed to update cadence step'); }
+                }}
+                disabled={(lead.cadence_step || 0) >= CADENCE_STEPS.length - 1}
+                style={{
+                  background: 'none', border: 'none', cursor: (lead.cadence_step || 0) >= CADENCE_STEPS.length - 1 ? 'default' : 'pointer',
+                  color: (lead.cadence_step || 0) >= CADENCE_STEPS.length - 1 ? '#ccc' : '#7b1fa2', padding: 0, fontSize: '0.75rem', fontWeight: 700, lineHeight: 1
+                }}
+                title="Next step"
+              >&#9654;</button>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
             <button
@@ -726,6 +772,18 @@ function LeadDetail() {
                           <span className={`priority-badge priority-${task.priority?.toLowerCase()}`} style={{ fontSize: '0.625rem', padding: '0.125rem 0.5rem' }}>
                             {task.priority}
                           </span>
+                          {task.source === 'auto_reminder' && (
+                            <span style={{
+                              fontSize: '0.625rem',
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '50px',
+                              background: '#e3f2fd',
+                              color: '#1565c0',
+                              fontWeight: 600
+                            }}>
+                              Auto
+                            </span>
+                          )}
                         </div>
                       </div>
                       <button

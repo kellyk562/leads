@@ -130,6 +130,18 @@ function Tasks() {
           >
             {task.priority}
           </span>
+          {task.source === 'auto_reminder' && (
+            <span style={{
+              fontSize: '0.625rem',
+              padding: '0.125rem 0.5rem',
+              borderRadius: '50px',
+              background: '#e3f2fd',
+              color: '#1565c0',
+              fontWeight: 600
+            }}>
+              Auto
+            </span>
+          )}
         </div>
       </div>
       <button

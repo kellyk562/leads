@@ -60,6 +60,9 @@ export const leadsApi = {
   // Bulk update stage
   bulkUpdateStage: (ids, stage, reason) => api.patch('/leads/bulk/stage', { ids, stage, ...(reason && { reason }) }),
 
+  // Update cadence step
+  updateCadenceStep: (id, step) => api.patch(`/leads/${id}/cadence-step`, { step }),
+
 };
 
 // Tasks API

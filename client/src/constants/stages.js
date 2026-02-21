@@ -50,6 +50,21 @@ export const getScoreLabel = (score) => {
   return 'Cold';
 };
 
+// Cadence/Sequence steps
+export const CADENCE_STEPS = [
+  { step: 0, label: 'Not started' },
+  { step: 1, label: 'Intro sent' },
+  { step: 2, label: 'Follow-up 1' },
+  { step: 3, label: 'Follow-up 2' },
+  { step: 4, label: 'Follow-up 3' },
+  { step: 5, label: 'Break-up email' },
+];
+
+export const getCadenceLabel = (step) => {
+  const entry = CADENCE_STEPS.find(s => s.step === step);
+  return entry ? entry.label : `Step ${step}`;
+};
+
 // Win/Loss reason presets
 export const CLOSED_WON_REASONS = [
   'Price',

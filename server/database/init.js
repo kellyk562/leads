@@ -189,6 +189,32 @@ async function initDatabase() {
       END $$;
     `);
 
+    // Add source column to tasks (for auto-reminder tracking)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'tasks' AND column_name = 'source'
+        ) THEN
+          ALTER TABLE tasks ADD COLUMN source TEXT;
+        END IF;
+      END $$;
+    `);
+
+    // Add cadence_step column to leads (sequence/cadence tracking)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'cadence_step'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN cadence_step INTEGER DEFAULT 0;
+        END IF;
+      END $$;
+    `);
+
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);

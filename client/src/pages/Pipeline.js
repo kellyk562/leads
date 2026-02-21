@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { leadsApi } from '../services/api';
-import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel } from '../constants/stages';
+import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 
 function Pipeline() {
@@ -166,6 +166,18 @@ function Pipeline() {
                               color: '#6c757d'
                             }}>
                               New
+                            </span>
+                          )}
+                          {(lead.cadence_step || 0) > 0 && (
+                            <span style={{
+                              fontSize: '0.6875rem',
+                              fontWeight: 600,
+                              padding: '0.125rem 0.5rem',
+                              borderRadius: '50px',
+                              background: '#f3e5f5',
+                              color: '#7b1fa2'
+                            }}>
+                              Step {lead.cadence_step}
                             </span>
                           )}
                         </div>

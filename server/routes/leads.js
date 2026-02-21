@@ -731,6 +731,44 @@ router.patch('/:id/stage', [
   }
 });
 
+// Cadence step labels (keep in sync with client)
+const CADENCE_LABELS = ['Not started', 'Intro sent', 'Follow-up 1', 'Follow-up 2', 'Follow-up 3', 'Break-up email'];
+
+// Update cadence step
+router.patch('/:id/cadence-step', [
+  param('id').isInt(),
+  body('step').isInt({ min: 0, max: 5 }).withMessage('Step must be 0-5'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    const { step } = req.body;
+    const label = CADENCE_LABELS[step] || `Step ${step}`;
+
+    await db.run(`UPDATE leads SET cadence_step = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`, [step, req.params.id]);
+
+    // Auto-log to contact history
+    await db.run(`
+      INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+      VALUES ($1, 'Other', $2, $3)
+    `, [req.params.id, `Cadence advanced to Step ${step}: ${label}`, `Cadence: ${label}`]);
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    res.json(updatedLead);
+  } catch (error) {
+    console.error('Error updating cadence step:', error);
+    res.status(500).json({ error: 'Failed to update cadence step' });
+  }
+});
+
 // Add contact history entry
 router.post('/:id/history', [
   param('id').isInt(),
