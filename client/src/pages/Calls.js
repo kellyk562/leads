@@ -376,7 +376,10 @@ function NewListModal({ onClose, onCreated }) {
       const s = search.toLowerCase();
       return (l.dispensary_name || '').toLowerCase().includes(s) ||
              (l.contact_name || '').toLowerCase().includes(s) ||
-             (l.city || '').toLowerCase().includes(s);
+             (l.city || '').toLowerCase().includes(s) ||
+             (l.state || '').toLowerCase().includes(s) ||
+             (l.address || '').toLowerCase().includes(s) ||
+             (l.zip_code || '').toLowerCase().includes(s);
     }
     return true;
   });
@@ -619,6 +622,12 @@ function CallHistoryTab() {
               <div style={{ marginBottom: '1rem' }}>
                 <strong style={{ fontSize: '0.75rem', color: '#888', display: 'block', marginBottom: '0.25rem' }}>Summary</strong>
                 <p style={{ margin: 0, fontSize: '0.875rem', lineHeight: 1.5 }}>{selectedLog.summary}</p>
+              </div>
+            )}
+            {selectedLog.recording_url && (
+              <div style={{ marginBottom: '1rem' }}>
+                <strong style={{ fontSize: '0.75rem', color: '#888', display: 'block', marginBottom: '0.375rem' }}>Recording</strong>
+                <audio controls src={selectedLog.recording_url} style={{ width: '100%', borderRadius: '8px' }} />
               </div>
             )}
             {selectedLog.transcript && (
