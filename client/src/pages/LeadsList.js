@@ -18,9 +18,10 @@ import {
   FaUpload,
   FaTimes,
   FaExclamationTriangle,
-  FaCopy
+  FaCopy,
+  FaRobot
 } from 'react-icons/fa';
-import { leadsApi, emailApi, emailTemplatesApi } from '../services/api';
+import { leadsApi, emailApi, emailTemplatesApi, callsApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 import QuickLogModal from '../components/QuickLogModal';
@@ -46,6 +47,8 @@ function LeadsList() {
   const [batchStep, setBatchStep] = useState(1);
   const [batchSending, setBatchSending] = useState(false);
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const [vapiConfigured, setVapiConfigured] = useState(false);
+  const [batchCalling, setBatchCalling] = useState(false);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -69,6 +72,7 @@ function LeadsList() {
 
   useEffect(() => {
     fetchLeads();
+    callsApi.getStatus().then(res => setVapiConfigured(res.data.configured)).catch(() => setVapiConfigured(false));
   }, [fetchLeads]);
 
   useEffect(() => {
@@ -215,6 +219,33 @@ function LeadsList() {
       toast.error('Failed to send batch email');
     } finally {
       setBatchSending(false);
+    }
+  };
+
+  const handleBatchCall = async () => {
+    const selectedLeads = leads.filter(l => selectedIds.has(l.id));
+    const withPhone = selectedLeads.filter(l => l.dispensary_number || l.contact_number);
+    const skipped = selectedLeads.length - withPhone.length;
+
+    if (withPhone.length === 0) {
+      toast.error('No selected leads have phone numbers');
+      return;
+    }
+
+    const msg = `Start AI calls to ${withPhone.length} lead${withPhone.length !== 1 ? 's' : ''}?${skipped > 0 ? ` (${skipped} will be skipped - no phone)` : ''}\n\nEstimated duration: ~${Math.round(withPhone.length * 30 / 60)} minutes`;
+    if (!window.confirm(msg)) return;
+
+    setBatchCalling(true);
+    try {
+      const res = await callsApi.batchCall([...selectedIds]);
+      toast.success(`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})${res.data.skipped > 0 ? `, ${res.data.skipped} skipped` : ''}`);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+    } catch (error) {
+      const msg = error.response?.data?.error || 'Failed to start batch calls';
+      toast.error(msg);
+    } finally {
+      setBatchCalling(false);
     }
   };
 
@@ -557,6 +588,16 @@ function LeadsList() {
             >
               <FaEnvelope /> Send Email
             </button>
+            {vapiConfigured && (
+              <button
+                className="btn btn-sm"
+                style={{ background: 'rgba(124,58,237,0.8)', color: 'white', border: 'none' }}
+                onClick={handleBatchCall}
+                disabled={batchCalling}
+              >
+                <FaRobot /> {batchCalling ? 'Starting...' : 'AI Call'}
+              </button>
+            )}
             <button
               className="btn btn-sm"
               style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none' }}

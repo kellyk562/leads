@@ -17,9 +17,10 @@ import {
   FaCopy,
   FaCheck,
   FaExchangeAlt,
-  FaPaperPlane
+  FaPaperPlane,
+  FaRobot
 } from 'react-icons/fa';
-import { leadsApi, tasksApi, emailTemplatesApi, emailApi } from '../services/api';
+import { leadsApi, tasksApi, emailTemplatesApi, emailApi, callsApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, CADENCE_STEPS, getCadenceLabel } from '../constants/stages';
 import CloseReasonModal from '../components/CloseReasonModal';
 import ClickToCall from '../components/ClickToCall';
@@ -65,6 +66,8 @@ function LeadDetail() {
   const [sendingEmail, setSendingEmail] = useState(false);
   const [activityFilter, setActivityFilter] = useState('All');
   const [pendingCloseStage, setPendingCloseStage] = useState(null);
+  const [vapiConfigured, setVapiConfigured] = useState(false);
+  const [callingLead, setCallingLead] = useState(false);
 
   const fetchLead = useCallback(async () => {
     try {
@@ -92,6 +95,7 @@ function LeadDetail() {
     fetchLead();
     fetchTasks();
     emailApi.getStatus().then(res => setEmailConfigured(res.data.configured)).catch(() => setEmailConfigured(false));
+    callsApi.getStatus().then(res => setVapiConfigured(res.data.configured)).catch(() => setVapiConfigured(false));
   }, [fetchLead, fetchTasks]);
 
   const handleDelete = async () => {
@@ -291,6 +295,25 @@ function LeadDetail() {
       toast.error(msg);
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const handleAiCall = async () => {
+    if (!lead.dispensary_number && !lead.contact_number) {
+      toast.error('This lead has no phone number on file');
+      return;
+    }
+    if (!window.confirm(`Start AI call to ${lead.dispensary_name}?`)) return;
+    setCallingLead(true);
+    try {
+      await callsApi.initiateCall(lead.id);
+      toast.success(`Call initiated to ${lead.dispensary_name}`);
+      fetchLead();
+    } catch (error) {
+      const msg = error.response?.data?.error || 'Failed to initiate call';
+      toast.error(msg);
+    } finally {
+      setCallingLead(false);
     }
   };
 
@@ -596,6 +619,29 @@ function LeadDetail() {
                 title="Next step"
               >&#9654;</button>
             </div>
+            {lead.call_status && (
+              <span style={{
+                display: 'inline-block',
+                marginTop: '0.25rem',
+                marginLeft: '0.5rem',
+                padding: '0.25rem 0.75rem',
+                borderRadius: '50px',
+                fontSize: '0.8125rem',
+                fontWeight: 600,
+                background: lead.call_status === 'completed' ? '#d1e7dd'
+                  : lead.call_status === 'ringing' ? '#cfe2ff'
+                  : lead.call_status === 'failed' ? '#f8d7da'
+                  : '#e9ecef',
+                color: lead.call_status === 'completed' ? '#198754'
+                  : lead.call_status === 'ringing' ? '#0d6efd'
+                  : lead.call_status === 'failed' ? '#dc3545'
+                  : '#6c757d',
+              }}>
+                <FaPhone size={10} style={{ marginRight: '0.25rem' }} />
+                Call: {lead.call_status}
+                {lead.call_duration ? ` (${Math.round(lead.call_duration)}s)` : ''}
+              </span>
+            )}
           </div>
           <div style={{ display: 'flex', gap: '0.5rem', width: '100%', flexWrap: 'wrap' }}>
             <button
@@ -612,6 +658,16 @@ function LeadDetail() {
             >
               <FaEnvelope /> Send Email
             </button>
+            {vapiConfigured && (lead.dispensary_number || lead.contact_number) && (
+              <button
+                className="btn"
+                onClick={handleAiCall}
+                disabled={callingLead}
+                style={{ flex: '1 1 auto', background: '#7c3aed', color: 'white', border: 'none' }}
+              >
+                <FaRobot /> {callingLead ? 'Calling...' : 'AI Call'}
+              </button>
+            )}
             <Link to={`/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
               <FaEdit /> Edit
             </Link>
@@ -728,6 +784,25 @@ function LeadDetail() {
               </div>
             </div>
           </div>
+
+          {/* Call Summary */}
+          {lead.call_summary && (
+            <div className="detail-section">
+              <h3><FaRobot /> AI Call Summary</h3>
+              <div style={{
+                background: '#f3e8ff',
+                border: '1px solid #c4b5fd',
+                borderRadius: '8px',
+                padding: '1rem',
+                whiteSpace: 'pre-wrap',
+                lineHeight: 1.6,
+                fontSize: '0.9375rem',
+                color: '#4c1d95'
+              }}>
+                {lead.call_summary}
+              </div>
+            </div>
+          )}
 
           {/* Notes */}
           {lead.notes && (

@@ -259,6 +259,87 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_scheduled_emails_status ON scheduled_emails(status, scheduled_for)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_scheduled_emails_lead_id ON scheduled_emails(lead_id)`);
 
+    // Add Vapi call columns to leads
+    const vapiLeadColumns = [
+      { name: 'vapi_call_id', type: 'TEXT' },
+      { name: 'call_status', type: 'TEXT' },
+      { name: 'call_duration', type: 'INTEGER' },
+      { name: 'last_called_at', type: 'TIMESTAMP' },
+      { name: 'call_summary', type: 'TEXT' }
+    ];
+    for (const col of vapiLeadColumns) {
+      await client.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'leads' AND column_name = '${col.name}'
+          ) THEN
+            ALTER TABLE leads ADD COLUMN ${col.name} ${col.type};
+          END IF;
+        END $$;
+      `);
+    }
+
+    // Create call_logs table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS call_logs (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+        vapi_call_id TEXT,
+        direction TEXT DEFAULT 'outbound',
+        status TEXT DEFAULT 'queued',
+        duration INTEGER,
+        started_at TIMESTAMP,
+        ended_at TIMESTAMP,
+        summary TEXT,
+        transcript TEXT,
+        recording_url TEXT,
+        cost NUMERIC(10,4),
+        metadata JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create callbacks table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS callbacks (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+        vapi_call_id TEXT,
+        callback_name TEXT,
+        callback_number TEXT,
+        callback_reason TEXT,
+        preferred_time TEXT,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'completed', 'cancelled')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create demos table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS demos (
+        id SERIAL PRIMARY KEY,
+        lead_id INTEGER REFERENCES leads(id) ON DELETE CASCADE,
+        vapi_call_id TEXT,
+        contact_name TEXT,
+        contact_email TEXT,
+        dispensary_name TEXT,
+        demo_date TEXT,
+        demo_time TEXT,
+        zoom_link TEXT,
+        notes TEXT,
+        status TEXT DEFAULT 'scheduled' CHECK(status IN ('scheduled', 'completed', 'cancelled', 'no_show')),
+        confirmation_sent BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_call_logs_lead_id ON call_logs(lead_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_call_logs_vapi_call_id ON call_logs(vapi_call_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_callbacks_lead_id ON callbacks(lead_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_demos_lead_id ON demos(lead_id)`);
+
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);

@@ -98,6 +98,14 @@ export const emailTemplatesApi = {
   delete: (id) => api.delete(`/email-templates/${id}`),
 };
 
+// Calls API (Vapi voice)
+export const callsApi = {
+  getStatus: () => api.get('/calls/status'),
+  initiateCall: (leadId) => api.post('/calls/outbound', { leadId }),
+  batchCall: (leadIds, delaySeconds) => api.post('/calls/batch', { leadIds, delaySeconds }),
+  getBatchStatus: (batchId) => api.get(`/calls/batch/${batchId}`),
+};
+
 // Email API (Gmail SMTP)
 export const emailApi = {
   getStatus: () => api.get('/email/status'),

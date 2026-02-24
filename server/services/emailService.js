@@ -22,17 +22,19 @@ async function verifyConnection() {
   return true;
 }
 
-async function sendEmail({ to, subject, text }) {
+async function sendEmail({ to, subject, text, html }) {
   const client = getClient();
   const fromAddress = process.env.EMAIL_FROM || 'Ken <ken@contact.weedhurry.com>';
   const replyTo = process.env.REPLY_TO || 'ken@weedhurry.com';
-  const { data, error } = await client.emails.send({
+  const payload = {
     from: fromAddress,
     replyTo,
     to,
     subject,
     text,
-  });
+  };
+  if (html) payload.html = html;
+  const { data, error } = await client.emails.send(payload);
   if (error) {
     throw new Error(error.message);
   }
