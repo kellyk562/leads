@@ -104,6 +104,32 @@ export const callsApi = {
   initiateCall: (leadId) => api.post('/calls/outbound', { leadId }),
   batchCall: (leadIds, delaySeconds) => api.post('/calls/batch', { leadIds, delaySeconds }),
   getBatchStatus: (batchId) => api.get(`/calls/batch/${batchId}`),
+
+  // Call Lists
+  getLists: () => api.get('/calls/lists'),
+  getList: (id) => api.get(`/calls/lists/${id}`),
+  createList: (data) => api.post('/calls/lists', data),
+  updateList: (id, data) => api.put(`/calls/lists/${id}`, data),
+  deleteList: (id) => api.delete(`/calls/lists/${id}`),
+  addLeadsToList: (id, leadIds) => api.post(`/calls/lists/${id}/leads`, { leadIds }),
+  removeLeadFromList: (id, leadId) => api.delete(`/calls/lists/${id}/leads/${leadId}`),
+
+  // Call History
+  getHistory: (status) => api.get('/calls/history', { params: status ? { status } : {} }),
+  getCallDetail: (id) => api.get(`/calls/history/${id}`),
+
+  // Callbacks
+  getCallbacks: (status) => api.get('/calls/callbacks', { params: status ? { status } : {} }),
+  updateCallback: (id, status) => api.patch(`/calls/callbacks/${id}`, { status }),
+
+  // Demos
+  getDemos: (status) => api.get('/calls/demos', { params: status ? { status } : {} }),
+  updateDemo: (id, status) => api.patch(`/calls/demos/${id}`, { status }),
+
+  // Schedules
+  getSchedules: () => api.get('/calls/schedules'),
+  createSchedule: (data) => api.post('/calls/schedules', data),
+  cancelSchedule: (id) => api.delete(`/calls/schedules/${id}`),
 };
 
 // Email API (Gmail SMTP)

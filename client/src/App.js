@@ -12,6 +12,7 @@ import Pipeline from './pages/Pipeline';
 import Tasks from './pages/Tasks';
 import EmailTemplates from './pages/EmailTemplates';
 import Analytics from './pages/Analytics';
+import Calls from './pages/Calls';
 import ImportLeads from './pages/ImportLeads';
 import QuickLogModal from './components/QuickLogModal';
 
@@ -27,6 +28,7 @@ function AppHeader() {
           <NavLink to="/leads">All</NavLink>
           <NavLink to="/pipeline">Pipeline</NavLink>
           <NavLink to="/tasks">Tasks</NavLink>
+          <NavLink to="/calls">Calls</NavLink>
           <NavLink to="/templates">Templates</NavLink>
           <NavLink to="/analytics">Analytics</NavLink>
           <NavLink to="/leads/new" className="add-lead-btn" title="Add Lead">
@@ -80,6 +82,7 @@ function App() {
             <Route path="/leads" element={<LeadsList />} />
             <Route path="/pipeline" element={<Pipeline />} />
             <Route path="/tasks" element={<Tasks />} />
+            <Route path="/calls" element={<Calls />} />
             <Route path="/templates" element={<EmailTemplates />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/import" element={<ImportLeads />} />

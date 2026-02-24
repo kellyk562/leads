@@ -57,6 +57,10 @@ async function startServer() {
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+
+      // Schedule executor — check for due scheduled_call_batches every 60s
+      const { startScheduleExecutor } = require('./routes/calls');
+      startScheduleExecutor();
     });
   } catch (error) {
     console.error('Failed to start server:', error);

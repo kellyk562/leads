@@ -340,6 +340,50 @@ async function initDatabase() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_callbacks_lead_id ON callbacks(lead_id)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_demos_lead_id ON demos(lead_id)`);
 
+    // Create call_lists table — saved named groups of leads to call
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS call_lists (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    // Create call_list_items table — leads belonging to a list
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS call_list_items (
+        id SERIAL PRIMARY KEY,
+        call_list_id INTEGER NOT NULL REFERENCES call_lists(id) ON DELETE CASCADE,
+        lead_id INTEGER NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+        position INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'called', 'skipped')),
+        called_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(call_list_id, lead_id)
+      )
+    `);
+
+    // Create scheduled_call_batches table — future scheduled batch calls
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS scheduled_call_batches (
+        id SERIAL PRIMARY KEY,
+        call_list_id INTEGER REFERENCES call_lists(id) ON DELETE SET NULL,
+        lead_ids JSONB,
+        scheduled_for TIMESTAMP NOT NULL,
+        delay_seconds INTEGER DEFAULT 30,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'running', 'completed', 'cancelled')),
+        batch_id TEXT,
+        results JSONB,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_call_list_items_list_id ON call_list_items(call_list_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_call_list_items_lead_id ON call_list_items(lead_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_scheduled_call_batches_status ON scheduled_call_batches(status, scheduled_for)`);
+
     // Create indexes
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_stage ON leads(stage)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_leads_priority ON leads(priority)`);
