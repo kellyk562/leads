@@ -60,27 +60,19 @@ router.post('/outbound', async (req, res) => {
       return res.status(400).json({ error: 'Invalid phone number format' });
     }
 
-    // Build assistant overrides with lead context
-    const assistantOverrides = {
-      variableValues: {
-        dispensary_name: lead.dispensary_name || '',
-        contact_name: lead.manager_name || lead.contact_name || '',
-        current_pos: lead.current_pos_system || 'their current system',
-        city: lead.city || '',
-        lead_id: String(lead.id),
-      },
-    };
-
+    // Pass lead context via metadata (read by webhooks)
+    // and variableValues (for {{variable}} substitution in Vapi prompt)
     const metadata = {
       lead_id: lead.id,
-      dispensary_name: lead.dispensary_name,
-      contact_name: lead.manager_name || lead.contact_name,
+      dispensary_name: lead.dispensary_name || '',
+      contact_name: lead.manager_name || lead.contact_name || '',
+      current_pos: lead.current_pos_system || '',
+      city: lead.city || '',
     };
 
-    // Call Vapi
+    // Call Vapi — no assistantOverrides so dashboard prompt is used as-is
     const vapiCall = await vapiService.createOutboundCall({
       phoneNumber,
-      assistantOverrides,
       metadata,
     });
 
@@ -168,22 +160,15 @@ router.post('/batch', async (req, res) => {
           const rawPhone = lead.dispensary_number || lead.contact_number;
           const phoneNumber = formatE164(rawPhone);
 
-          const assistantOverrides = {
-            variableValues: {
-              dispensary_name: lead.dispensary_name || '',
-              contact_name: lead.manager_name || lead.contact_name || '',
-              current_pos: lead.current_pos_system || 'their current system',
-              city: lead.city || '',
-              lead_id: String(lead.id),
-            },
-          };
-
           const metadata = {
             lead_id: lead.id,
-            dispensary_name: lead.dispensary_name,
+            dispensary_name: lead.dispensary_name || '',
+            contact_name: lead.manager_name || lead.contact_name || '',
+            current_pos: lead.current_pos_system || '',
+            city: lead.city || '',
           };
 
-          const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides, metadata });
+          const vapiCall = await vapiService.createOutboundCall({ phoneNumber, metadata });
 
           await run(
             `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
