@@ -102,8 +102,22 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
       [leadId, vapiCallId, callbackName, callbackReason, preferredTime]
     );
 
-    // Log to contact_history
+    // Update lead record with owner name and callback info
     if (leadId) {
+      const updates = [];
+      const params = [];
+      let idx = 1;
+
+      if (callbackName) { updates.push(`owner_name = $${idx++}`); params.push(callbackName); }
+      if (preferredTime) { updates.push(`callback_time_from = $${idx++}`); params.push(preferredTime); }
+
+      if (updates.length > 0) {
+        updates.push('updated_at = CURRENT_TIMESTAMP');
+        params.push(leadId);
+        await run(`UPDATE leads SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+      }
+
+      // Log to contact_history
       await run(
         `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
          VALUES ($1, 'Phone', $2, $3)`,
