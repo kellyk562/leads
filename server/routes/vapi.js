@@ -32,8 +32,10 @@ router.post('/tool-handler', async (req, res) => {
       const fnName = toolCall.function?.name;
       const args = toolCall.function?.arguments || {};
 
-      if (fnName === 'save_callback') {
-        await handleSaveCallback({ leadId, vapiCallId, args, toolCall, results });
+      if (fnName === 'save_contact_info') {
+        await handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, results, metadata });
+      } else if (fnName === 'save_callback') {
+        await handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata });
       } else if (fnName === 'schedule_demo') {
         await handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results, metadata });
       } else {
@@ -51,14 +53,53 @@ router.post('/tool-handler', async (req, res) => {
   }
 });
 
-async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results }) {
+async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
-    const { callback_name, callback_number, callback_reason, preferred_time } = args;
+    const { owner_name, email, notes, dispensary_name } = args;
+
+    // Update the lead record with collected contact info
+    if (leadId) {
+      const updates = [];
+      const params = [];
+      let paramIdx = 1;
+
+      if (owner_name) { updates.push(`owner_name = $${paramIdx++}`); params.push(owner_name); }
+      if (email) { updates.push(`contact_email = $${paramIdx++}`); params.push(email); }
+      if (notes) { updates.push(`notes = $${paramIdx++}`); params.push(notes); }
+      if (dispensary_name) { updates.push(`dispensary_name = $${paramIdx++}`); params.push(dispensary_name); }
+
+      if (updates.length > 0) {
+        updates.push(`updated_at = CURRENT_TIMESTAMP`);
+        params.push(leadId);
+        await run(`UPDATE leads SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
+      }
+
+      await run(
+        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+         VALUES ($1, 'Phone', $2, $3)`,
+        [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
+      );
+    }
+
+    results.push({ toolCallId: toolCall.id, result: 'Contact info saved successfully' });
+  } catch (error) {
+    console.error('save_contact_info error:', error);
+    results.push({ toolCallId: toolCall.id, result: `Error saving contact info: ${error.message}` });
+  }
+}
+
+async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata }) {
+  try {
+    // Map Vapi dashboard params → DB columns
+    const callbackName = args.owner_name || args.callback_name || null;
+    const callbackReason = args.notes || args.callback_reason || null;
+    const preferredTime = args.callback_time || args.preferred_time || null;
+    const dispensaryName = args.dispensary_name || metadata.dispensary_name || null;
 
     await run(
-      `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_number, callback_reason, preferred_time)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [leadId, vapiCallId, callback_name, callback_number, callback_reason, preferred_time]
+      `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_reason, preferred_time)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [leadId, vapiCallId, callbackName, callbackReason, preferredTime]
     );
 
     // Log to contact_history
@@ -68,7 +109,7 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results 
          VALUES ($1, 'Phone', $2, $3)`,
         [
           leadId,
-          `AI Call - Callback requested by ${callback_name || 'contact'}. Reason: ${callback_reason || 'N/A'}. Preferred time: ${preferred_time || 'N/A'}`,
+          `AI Call - Callback requested by ${callbackName || 'contact'}. Reason: ${callbackReason || 'N/A'}. Preferred time: ${preferredTime || 'N/A'}`,
           'Callback Scheduled'
         ]
       );
@@ -89,7 +130,12 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results 
 
 async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
-    const { contact_name, contact_email, demo_date, demo_time, notes } = args;
+    // Map Vapi dashboard params → DB columns
+    const contactName = args.owner_name || args.contact_name || null;
+    const contactEmail = args.owner_email || args.contact_email || null;
+    const demoDate = args.preferred_date || args.demo_date || null;
+    const demoTime = args.preferred_time || args.demo_time || null;
+    const notes = args.notes || null;
     const dispensaryName = metadata.dispensary_name || args.dispensary_name || '';
     const zoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
 
@@ -97,27 +143,27 @@ async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results,
     const demoResult = await run(
       `INSERT INTO demos (lead_id, vapi_call_id, contact_name, contact_email, dispensary_name, demo_date, demo_time, zoom_link, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [leadId, vapiCallId, contact_name, contact_email, dispensaryName, demo_date, demo_time, zoomLink, notes]
+      [leadId, vapiCallId, contactName, contactEmail, dispensaryName, demoDate, demoTime, zoomLink, notes]
     );
 
     // Send confirmation email if we have an email address
     let confirmationSent = false;
-    const emailTo = contact_email || (leadId ? (await get('SELECT contact_email FROM leads WHERE id = $1', [leadId]))?.contact_email : null);
+    const emailTo = contactEmail || (leadId ? (await get('SELECT contact_email FROM leads WHERE id = $1', [leadId]))?.contact_email : null);
 
     if (emailTo && emailService.isConfigured()) {
       try {
         const htmlBody = buildDemoConfirmationHtml({
-          contact_name: contact_name || 'there',
+          contact_name: contactName || 'there',
           dispensary_name: dispensaryName,
-          demo_date: demo_date || 'TBD',
-          demo_time: demo_time || 'TBD',
+          demo_date: demoDate || 'TBD',
+          demo_time: demoTime || 'TBD',
           zoom_link: zoomLink,
         });
 
         await emailService.sendEmail({
           to: emailTo,
           subject: `Demo Confirmed - ${dispensaryName || 'Weedhurry POS'}`,
-          text: `Hi ${contact_name || 'there'}, your demo has been scheduled for ${demo_date || 'TBD'} at ${demo_time || 'TBD'}. Join here: ${zoomLink}`,
+          text: `Hi ${contactName || 'there'}, your demo has been scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Join here: ${zoomLink}`,
           html: htmlBody,
         });
         confirmationSent = true;
@@ -142,7 +188,7 @@ async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results,
          VALUES ($1, 'Phone', $2, $3)`,
         [
           leadId,
-          `AI Call - Demo scheduled for ${demo_date || 'TBD'} at ${demo_time || 'TBD'}. Contact: ${contact_name || 'N/A'}. ${confirmationSent ? 'Confirmation email sent.' : 'No confirmation email sent.'}`,
+          `AI Call - Demo scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Contact: ${contactName || 'N/A'}. ${confirmationSent ? 'Confirmation email sent.' : 'No confirmation email sent.'}`,
           'Demo Scheduled'
         ]
       );
