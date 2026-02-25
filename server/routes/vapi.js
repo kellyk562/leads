@@ -14,6 +14,27 @@ function stageIndex(stage) {
   return idx === -1 ? 0 : idx;
 }
 
+// Combine callback_day + callback_time_of_day into a parseable string
+function buildScheduleInput(callbackDay, callbackTimeOfDay) {
+  if (!callbackDay) return null;
+  const day = callbackDay.toLowerCase().trim();
+  const time = (callbackTimeOfDay && callbackTimeOfDay !== 'not specified') ? callbackTimeOfDay.trim() : '';
+
+  // "today" with relative time like "in 20 minutes"
+  if (day === 'today' && time.match(/^in\s+/i)) return time;
+  // "today" with a period or specific time
+  if (day === 'today' && time) return time;
+  // "today" with no time
+  if (day === 'today') return 'in 1 hour';
+  // "tomorrow" with time
+  if (day === 'tomorrow' && time) return `tomorrow ${time}`;
+  if (day === 'tomorrow') return 'tomorrow';
+  // Day name with time (e.g. "Thursday" + "after 2pm")
+  if (time) return `${day} ${time}`;
+  // Day name alone
+  return day;
+}
+
 // Default callback hour: 10 AM Pacific (UTC-8 = 18, UTC-7 DST = 17)
 const DEFAULT_HOUR_PT = 10;
 
@@ -94,6 +115,33 @@ function parseCallbackTime(timeStr) {
     if (unit.startsWith('hour') || unit.startsWith('hr')) d.setHours(d.getHours() + val);
     else d.setMinutes(d.getMinutes() + val);
     return d;
+  }
+
+  // Match "after Xpm" patterns like "after 2pm", "around 3pm"
+  const afterMatch = lower.match(/(?:after|around|by)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (afterMatch) {
+    let hour = parseInt(afterMatch[1]);
+    const min = parseInt(afterMatch[2] || '0');
+    const ampm = afterMatch[3]?.toLowerCase();
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    let ts = pacificDate(todayPT.getFullYear(), todayPT.getMonth(), todayPT.getDate(), hour, min);
+    if (new Date(ts) <= new Date()) {
+      const tmrw = new Date(todayPT); tmrw.setDate(tmrw.getDate() + 1);
+      ts = pacificDate(tmrw.getFullYear(), tmrw.getMonth(), tmrw.getDate(), hour, min);
+    }
+    return new Date(ts);
+  }
+
+  // Match standalone period words: "morning", "afternoon", "evening"
+  if (/^(morning|afternoon|evening)$/.test(lower)) {
+    const hour = lower === 'morning' ? 9 : lower === 'afternoon' ? 14 : 17;
+    let ts = pacificDate(todayPT.getFullYear(), todayPT.getMonth(), todayPT.getDate(), hour, 0);
+    if (new Date(ts) <= new Date()) {
+      const tmrw = new Date(todayPT); tmrw.setDate(tmrw.getDate() + 1);
+      ts = pacificDate(tmrw.getFullYear(), tmrw.getMonth(), tmrw.getDate(), hour, 0);
+    }
+    return new Date(ts);
   }
 
   // Match time-only like "2pm", "3:30 PM", "14:00"
@@ -215,9 +263,16 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
   try {
     // Map Vapi dashboard params → DB columns
     const callbackName = args.owner_name || args.callback_name || null;
+    const callbackDay = args.callback_day || null;
+    const callbackTimeOfDay = args.callback_time_of_day || null;
     const callbackReason = args.notes || args.callback_reason || null;
-    const preferredTime = args.callback_time || args.preferred_time || null;
     const dispensaryName = args.dispensary_name || metadata.dispensary_name || null;
+
+    // Build a human-readable preferred_time string from day + time_of_day
+    const timeParts = [];
+    if (callbackDay) timeParts.push(callbackDay);
+    if (callbackTimeOfDay && callbackTimeOfDay !== 'not specified') timeParts.push(callbackTimeOfDay);
+    const preferredTime = timeParts.length > 0 ? timeParts.join(' — ') : (args.callback_time || args.preferred_time || null);
 
     await run(
       `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_reason, preferred_time)
@@ -246,22 +301,23 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
          VALUES ($1, 'Phone', $2, $3)`,
         [
           leadId,
-          `AI Call - Callback requested by ${callbackName || 'contact'}. Reason: ${callbackReason || 'N/A'}. Preferred time: ${preferredTime || 'N/A'}`,
+          `AI Call - Callback requested by ${callbackName || 'contact'}. Day: ${callbackDay || 'N/A'}. Time: ${callbackTimeOfDay || 'N/A'}. Notes: ${callbackReason || 'N/A'}`,
           'Callback Scheduled'
         ]
       );
 
-      // Auto-schedule follow-up AI call if we got a callback time
-      if (preferredTime && leadId) {
+      // Auto-schedule follow-up AI call from callback_day + callback_time_of_day
+      const timeInput = buildScheduleInput(callbackDay, callbackTimeOfDay);
+      if (timeInput) {
         try {
-          const scheduledFor = parseCallbackTime(preferredTime);
+          const scheduledFor = parseCallbackTime(timeInput);
           if (scheduledFor && scheduledFor > new Date()) {
             await pool.query(
               `INSERT INTO scheduled_call_batches (lead_ids, scheduled_for, delay_seconds, status)
                VALUES ($1, $2, 30, 'pending')`,
               [JSON.stringify([leadId]), scheduledFor]
             );
-            console.log(`Auto-scheduled follow-up call for lead ${leadId} at ${scheduledFor.toISOString()}`);
+            console.log(`Auto-scheduled follow-up call for lead ${leadId} at ${scheduledFor.toISOString()} (from: ${timeInput})`);
           }
         } catch (schedErr) {
           console.error('Auto-schedule follow-up error:', schedErr);
