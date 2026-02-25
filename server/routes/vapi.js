@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { get, run, pool } = require('../database/init');
 const emailService = require('../services/emailService');
+const zoomService = require('../services/zoomService');
 
 // Stage ordering for regression guard
 const STAGE_ORDER = [
@@ -185,6 +186,14 @@ function parseCallbackTime(timeStr) {
   return null;
 }
 
+// Combine demo date + time into an ISO string for the Zoom API
+function buildZoomStartTime(demoDate, demoTime) {
+  const input = buildScheduleInput(demoDate, demoTime);
+  if (!input) return null;
+  const parsed = parseCallbackTime(input);
+  return parsed ? parsed.toISOString() : null;
+}
+
 // POST /api/vapi/tool-handler — handles in-call tool invocations from Vapi
 router.post('/tool-handler', async (req, res) => {
   try {
@@ -347,7 +356,22 @@ async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results,
     const demoTime = args.preferred_time || args.demo_time || null;
     const notes = args.notes || null;
     const dispensaryName = metadata.dispensary_name || args.dispensary_name || '';
-    const zoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
+    let zoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
+
+    // Auto-create a unique Zoom meeting if configured
+    if (zoomService.isConfigured()) {
+      try {
+        const startTime = buildZoomStartTime(demoDate, demoTime);
+        const meeting = await zoomService.createMeeting({
+          topic: `Weedhurry POS Demo – ${dispensaryName || contactName || 'Prospect'}`,
+          startTime,
+          duration: 30,
+        });
+        zoomLink = meeting.joinUrl;
+      } catch (zoomErr) {
+        console.error('Zoom meeting creation failed, using default link:', zoomErr.message);
+      }
+    }
 
     // Save demo record
     const demoResult = await run(
