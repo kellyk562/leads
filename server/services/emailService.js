@@ -1,31 +1,39 @@
-const { Resend } = require('resend');
+const nodemailer = require('nodemailer');
 
-let resend = null;
+let transporter = null;
 
 function isConfigured() {
-  return !!process.env.RESEND_API_KEY;
+  return !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
 }
 
-function getClient() {
-  if (!resend) {
+function getTransporter() {
+  if (!transporter) {
     if (!isConfigured()) {
-      throw new Error('Resend is not configured. Set RESEND_API_KEY in .env');
+      throw new Error('Gmail is not configured. Set GMAIL_USER and GMAIL_APP_PASSWORD in .env');
     }
-    resend = new Resend(process.env.RESEND_API_KEY);
+    transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+    });
   }
-  return resend;
+  return transporter;
 }
 
 async function verifyConnection() {
-  const client = getClient();
-  await client.apiKeys.list();
+  const t = getTransporter();
+  await t.verify();
   return true;
 }
 
 async function sendEmail({ to, subject, text, html }) {
-  const client = getClient();
-  const fromAddress = process.env.EMAIL_FROM || 'Ken <ken@weedhurry.com>';
-  const replyTo = process.env.REPLY_TO || 'ken@weedhurry.com';
+  const t = getTransporter();
+  const fromAddress = process.env.EMAIL_FROM || `Ken <${process.env.GMAIL_USER}>`;
+  const replyTo = process.env.REPLY_TO || process.env.GMAIL_USER;
   const payload = {
     from: fromAddress,
     replyTo,
@@ -34,11 +42,8 @@ async function sendEmail({ to, subject, text, html }) {
     text,
   };
   if (html) payload.html = html;
-  const { data, error } = await client.emails.send(payload);
-  if (error) {
-    throw new Error(error.message);
-  }
-  return { messageId: data.id };
+  const info = await t.sendMail(payload);
+  return { messageId: info.messageId };
 }
 
 module.exports = { isConfigured, verifyConnection, sendEmail };

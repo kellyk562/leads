@@ -37,7 +37,7 @@ router.post('/send', [
 ], async (req, res) => {
   try {
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ error: 'Email is not configured. Add RESEND_API_KEY to your environment variables.' });
+      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your environment variables.' });
     }
 
     const errors = validationResult(req);
@@ -95,7 +95,7 @@ router.post('/batch', [
 ], async (req, res) => {
   try {
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ error: 'Email is not configured. Add RESEND_API_KEY to your environment variables.' });
+      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your environment variables.' });
     }
 
     const errors = validationResult(req);
