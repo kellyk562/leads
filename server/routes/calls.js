@@ -24,6 +24,24 @@ function formatE164(phone) {
   return `+${digits}`;
 }
 
+// Build dynamic firstMessage and variableValues for Vapi assistantOverrides
+function buildAssistantOverrides(lead) {
+  const ownerName = (lead.manager_name || '').trim();
+  const firstMessage = ownerName
+    ? `Hey there, this is Alex from Weedhurry. Is ${ownerName} available by any chance?`
+    : `Hey there, this is Alex from Weedhurry. Is the owner available by any chance?`;
+
+  return {
+    firstMessage,
+    variableValues: {
+      ownerName: ownerName || 'the owner',
+      dispensaryName: lead.dispensary_name || '',
+      currentPOS: lead.current_pos_system || '',
+      city: lead.city || '',
+    },
+  };
+}
+
 // In-memory batch tracking
 const batches = new Map();
 
@@ -383,8 +401,6 @@ router.post('/outbound', async (req, res) => {
       return res.status(400).json({ error: 'Invalid phone number format' });
     }
 
-    // Pass lead context via metadata (read by webhooks)
-    // and variableValues (for {{variable}} substitution in Vapi prompt)
     const metadata = {
       lead_id: lead.id,
       dispensary_name: lead.dispensary_name || '',
@@ -393,9 +409,9 @@ router.post('/outbound', async (req, res) => {
       city: lead.city || '',
     };
 
-    // Call Vapi — no assistantOverrides so dashboard prompt is used as-is
     const vapiCall = await vapiService.createOutboundCall({
       phoneNumber,
+      assistantOverrides: buildAssistantOverrides(lead),
       metadata,
     });
 
@@ -456,7 +472,7 @@ router.post('/batch', async (req, res) => {
 
     // Validate leads have phone numbers
     const leads = await all(
-      `SELECT id, dispensary_name, dispensary_number, contact_number FROM leads WHERE id = ANY($1)`,
+      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city FROM leads WHERE id = ANY($1)`,
       [leadIds]
     );
 
@@ -491,7 +507,7 @@ router.post('/batch', async (req, res) => {
             city: lead.city || '',
           };
 
-          const vapiCall = await vapiService.createOutboundCall({ phoneNumber, metadata });
+          const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides: buildAssistantOverrides(lead), metadata });
 
           await run(
             `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
@@ -589,7 +605,7 @@ function startScheduleExecutor() {
               city: lead.city || '',
             };
 
-            const vapiCall = await vapiService.createOutboundCall({ phoneNumber, metadata });
+            const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides: buildAssistantOverrides(lead), metadata });
             await run(
               `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP WHERE id = $2`,
               [vapiCall.id, lead.id]
