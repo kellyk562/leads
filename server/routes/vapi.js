@@ -243,7 +243,7 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
       const params = [];
       let paramIdx = 1;
 
-      if (owner_name) { updates.push(`owner_name = $${paramIdx++}`); params.push(owner_name); }
+      if (owner_name) { updates.push(`manager_name = $${paramIdx++}`); params.push(owner_name); }
       if (email) { updates.push(`contact_email = $${paramIdx++}`); params.push(email); }
       if (notes) { updates.push(`notes = $${paramIdx++}`); params.push(notes); }
       if (dispensary_name) { updates.push(`dispensary_name = $${paramIdx++}`); params.push(dispensary_name); }
@@ -295,7 +295,7 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
       const params = [];
       let idx = 1;
 
-      if (callbackName) { updates.push(`owner_name = $${idx++}`); params.push(callbackName); }
+      if (callbackName) { updates.push(`manager_name = $${idx++}`); params.push(callbackName); }
       if (preferredTime) { updates.push(`callback_time_from = $${idx++}`); params.push(preferredTime); }
 
       if (updates.length > 0) {
