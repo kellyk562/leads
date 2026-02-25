@@ -14,6 +14,84 @@ function stageIndex(stage) {
   return idx === -1 ? 0 : idx;
 }
 
+// Parse natural-language callback time into a Date
+function parseCallbackTime(timeStr) {
+  if (!timeStr) return null;
+  const lower = timeStr.toLowerCase().trim();
+
+  // Try direct ISO/date parse first
+  const direct = new Date(timeStr);
+  if (!isNaN(direct.getTime()) && direct > new Date()) return direct;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Match patterns like "tomorrow at 2pm", "tomorrow 3:00 PM", "tomorrow afternoon"
+  const tomorrowMatch = lower.match(/tomorrow\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+  if (tomorrowMatch) {
+    let hour = parseInt(tomorrowMatch[1]);
+    const min = parseInt(tomorrowMatch[2] || '0');
+    const ampm = tomorrowMatch[3];
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    const d = new Date(today); d.setDate(d.getDate() + 1); d.setHours(hour, min, 0, 0);
+    return d;
+  }
+  if (lower.includes('tomorrow')) {
+    const d = new Date(today); d.setDate(d.getDate() + 1);
+    if (lower.includes('morning')) d.setHours(9, 0, 0, 0);
+    else if (lower.includes('afternoon')) d.setHours(14, 0, 0, 0);
+    else if (lower.includes('evening')) d.setHours(17, 0, 0, 0);
+    else d.setHours(10, 0, 0, 0);
+    return d;
+  }
+
+  // Match "in X hours/minutes"
+  const inMatch = lower.match(/in\s+(\d+)\s*(hour|minute|min|hr)/);
+  if (inMatch) {
+    const val = parseInt(inMatch[1]);
+    const unit = inMatch[2];
+    const d = new Date(now);
+    if (unit.startsWith('hour') || unit.startsWith('hr')) d.setHours(d.getHours() + val);
+    else d.setMinutes(d.getMinutes() + val);
+    return d;
+  }
+
+  // Match time-only like "2pm", "3:30 PM", "14:00"
+  const timeMatch = lower.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
+  if (timeMatch) {
+    let hour = parseInt(timeMatch[1]);
+    const min = parseInt(timeMatch[2] || '0');
+    const ampm = timeMatch[3];
+    if (ampm === 'pm' && hour < 12) hour += 12;
+    if (ampm === 'am' && hour === 12) hour = 0;
+    // Schedule for today if time hasn't passed, otherwise tomorrow
+    const d = new Date(today); d.setHours(hour, min, 0, 0);
+    if (d <= now) d.setDate(d.getDate() + 1);
+    return d;
+  }
+
+  // Match day names like "Monday at 2pm"
+  const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  for (let i = 0; i < dayNames.length; i++) {
+    if (lower.includes(dayNames[i])) {
+      const dayMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
+      let hour = dayMatch ? parseInt(dayMatch[1]) : 10;
+      const min = dayMatch ? parseInt(dayMatch[2] || '0') : 0;
+      const ampm = dayMatch ? dayMatch[3] : null;
+      if (ampm === 'pm' && hour < 12) hour += 12;
+      if (ampm === 'am' && hour === 12) hour = 0;
+      const d = new Date(today);
+      const diff = (i - d.getDay() + 7) % 7 || 7; // always next occurrence
+      d.setDate(d.getDate() + diff);
+      d.setHours(hour, min, 0, 0);
+      return d;
+    }
+  }
+
+  return null;
+}
+
 // POST /api/vapi/tool-handler — handles in-call tool invocations from Vapi
 router.post('/tool-handler', async (req, res) => {
   try {
@@ -127,6 +205,23 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
           'Callback Scheduled'
         ]
       );
+
+      // Auto-schedule follow-up AI call if we got a callback time
+      if (preferredTime && leadId) {
+        try {
+          const scheduledFor = parseCallbackTime(preferredTime);
+          if (scheduledFor && scheduledFor > new Date()) {
+            await pool.query(
+              `INSERT INTO scheduled_call_batches (lead_ids, scheduled_for, delay_seconds, status)
+               VALUES ($1, $2, 30, 'pending')`,
+              [JSON.stringify([leadId]), scheduledFor]
+            );
+            console.log(`Auto-scheduled follow-up call for lead ${leadId} at ${scheduledFor.toISOString()}`);
+          }
+        } catch (schedErr) {
+          console.error('Auto-schedule follow-up error:', schedErr);
+        }
+      }
     }
 
     results.push({

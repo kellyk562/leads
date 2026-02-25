@@ -68,6 +68,9 @@ function LeadDetail() {
   const [pendingCloseStage, setPendingCloseStage] = useState(null);
   const [vapiConfigured, setVapiConfigured] = useState(false);
   const [callingLead, setCallingLead] = useState(false);
+  const [showAiCallMenu, setShowAiCallMenu] = useState(false);
+  const [showScheduleCallModal, setShowScheduleCallModal] = useState(false);
+  const [scheduleCallForm, setScheduleCallForm] = useState({ scheduledFor: '', delaySeconds: 30 });
 
   const fetchLead = useCallback(async () => {
     try {
@@ -314,6 +317,26 @@ function LeadDetail() {
       toast.error(msg);
     } finally {
       setCallingLead(false);
+    }
+  };
+
+  const handleScheduleAiCall = async () => {
+    if (!scheduleCallForm.scheduledFor) {
+      toast.error('Select a date and time');
+      return;
+    }
+    try {
+      await callsApi.createSchedule({
+        leadIds: [lead.id],
+        scheduledFor: new Date(scheduleCallForm.scheduledFor).toISOString(),
+        delaySeconds: scheduleCallForm.delaySeconds,
+      });
+      toast.success(`AI call scheduled for ${new Date(scheduleCallForm.scheduledFor).toLocaleString()}`);
+      setShowScheduleCallModal(false);
+      setScheduleCallForm({ scheduledFor: '', delaySeconds: 30 });
+    } catch (error) {
+      const msg = error.response?.data?.error || 'Failed to schedule call';
+      toast.error(msg);
     }
   };
 
@@ -660,14 +683,43 @@ function LeadDetail() {
               <FaEnvelope /> Send Email
             </button>
             {vapiConfigured && (lead.dispensary_number || lead.contact_number) && (
-              <button
-                className="btn"
-                onClick={handleAiCall}
-                disabled={callingLead}
-                style={{ flex: '1 1 auto', background: '#7c3aed', color: 'white', border: 'none' }}
-              >
-                <FaRobot /> {callingLead ? 'Calling...' : 'AI Call'}
-              </button>
+              <div style={{ position: 'relative', flex: '1 1 auto', display: 'flex' }}>
+                <button
+                  className="btn"
+                  onClick={handleAiCall}
+                  disabled={callingLead}
+                  style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px 0 0 6px' }}
+                >
+                  <FaRobot /> {callingLead ? 'Calling...' : 'AI Call'}
+                </button>
+                <button
+                  className="btn"
+                  onClick={() => setShowAiCallMenu(!showAiCallMenu)}
+                  style={{ background: '#6d28d9', color: 'white', border: 'none', borderRadius: '0 6px 6px 0', padding: '0.5rem', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
+                >
+                  ▼
+                </button>
+                {showAiCallMenu && (
+                  <div style={{
+                    position: 'absolute', top: '100%', right: 0, marginTop: '0.25rem',
+                    background: 'white', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+                    zIndex: 100, minWidth: '180px', overflow: 'hidden'
+                  }}>
+                    <button
+                      onClick={() => { setShowAiCallMenu(false); handleAiCall(); }}
+                      style={{ display: 'block', width: '100%', padding: '0.625rem 1rem', border: 'none', background: 'white', cursor: 'pointer', textAlign: 'left', fontSize: '0.8125rem' }}
+                    >
+                      <FaRobot style={{ marginRight: '0.5rem' }} /> Call Now
+                    </button>
+                    <button
+                      onClick={() => { setShowAiCallMenu(false); setShowScheduleCallModal(true); }}
+                      style={{ display: 'block', width: '100%', padding: '0.625rem 1rem', border: 'none', background: 'white', cursor: 'pointer', textAlign: 'left', fontSize: '0.8125rem', borderTop: '1px solid #f0f0f0' }}
+                    >
+                      <FaCalendarAlt style={{ marginRight: '0.5rem' }} /> Schedule for Later
+                    </button>
+                  </div>
+                )}
+              </div>
             )}
             <Link to={`/leads/${id}/edit`} className="btn btn-primary" style={{ flex: '1 1 auto', textAlign: 'center', justifyContent: 'center' }}>
               <FaEdit /> Edit
@@ -1281,6 +1333,50 @@ function LeadDetail() {
                   <button className="btn btn-outline" onClick={() => setShowEmailModal(false)}>Cancel</button>
                 )}
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Schedule AI Call Modal */}
+      {showScheduleCallModal && (
+        <div className="modal-overlay" onClick={() => setShowScheduleCallModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h3>Schedule AI Call</h3>
+              <button className="modal-close" onClick={() => setShowScheduleCallModal(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '0.875rem', color: '#666', marginTop: 0 }}>
+                Schedule an AI call to <strong>{lead.dispensary_name}</strong>
+              </p>
+              <div className="form-group">
+                <label>Date & Time <span className="required">*</span></label>
+                <input
+                  type="datetime-local"
+                  value={scheduleCallForm.scheduledFor}
+                  onChange={(e) => setScheduleCallForm(prev => ({ ...prev, scheduledFor: e.target.value }))}
+                />
+              </div>
+              <div className="form-group">
+                <label>Delay Between Calls (seconds)</label>
+                <input
+                  type="number"
+                  value={scheduleCallForm.delaySeconds}
+                  onChange={(e) => setScheduleCallForm(prev => ({ ...prev, delaySeconds: parseInt(e.target.value) || 30 }))}
+                  min={5}
+                  max={300}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setShowScheduleCallModal(false)}>Cancel</button>
+              <button
+                className="btn"
+                onClick={handleScheduleAiCall}
+                style={{ background: '#7c3aed', color: 'white', border: 'none' }}
+              >
+                <FaCalendarAlt /> Schedule Call
+              </button>
             </div>
           </div>
         </div>
