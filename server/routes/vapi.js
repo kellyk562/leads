@@ -14,36 +14,75 @@ function stageIndex(stage) {
   return idx === -1 ? 0 : idx;
 }
 
-// Parse natural-language callback time into a Date
+// Default callback hour: 10 AM Pacific (UTC-8 = 18, UTC-7 DST = 17)
+const DEFAULT_HOUR_PT = 10;
+
+// Get current time in Pacific
+function pacificNow() {
+  return new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+}
+
+// Build a Date in Pacific time, returned as UTC for DB storage
+function pacificDate(year, month, day, hour, min) {
+  // Create an ISO string as if in Pacific, then let JS resolve offset
+  const pad = (n) => String(n).padStart(2, '0');
+  // Use a temp date to determine if DST is active
+  const tempStr = `${year}-${pad(month + 1)}-${pad(day)}T${pad(hour)}:${pad(min)}:00`;
+  const opts = { timeZone: 'America/Los_Angeles', timeZoneName: 'short' };
+  const ptNow = new Date(tempStr + 'Z'); // rough guess
+  const formatted = ptNow.toLocaleString('en-US', opts);
+  const isPDT = formatted.includes('PDT');
+  const offsetHours = isPDT ? 7 : 8;
+  return new Date(`${tempStr}+00:00`).getTime() + offsetHours * 3600000;
+}
+
+// Parse natural-language callback time into a Date (Pacific-aware, defaults to 10 AM PT)
 function parseCallbackTime(timeStr) {
   if (!timeStr) return null;
   const lower = timeStr.toLowerCase().trim();
 
-  // Try direct ISO/date parse first
-  const direct = new Date(timeStr);
-  if (!isNaN(direct.getTime()) && direct > new Date()) return direct;
+  const nowPT = pacificNow();
+  const todayPT = new Date(nowPT.getFullYear(), nowPT.getMonth(), nowPT.getDate());
 
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-
-  // Match patterns like "tomorrow at 2pm", "tomorrow 3:00 PM", "tomorrow afternoon"
-  const tomorrowMatch = lower.match(/tomorrow\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
-  if (tomorrowMatch) {
-    let hour = parseInt(tomorrowMatch[1]);
-    const min = parseInt(tomorrowMatch[2] || '0');
-    const ampm = tomorrowMatch[3];
+  // Helper: extract time from a string, default to 10 AM PT if none found
+  function extractTime(str) {
+    const m = str.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
+    if (!m) return { hour: DEFAULT_HOUR_PT, min: 0 };
+    let hour = parseInt(m[1]);
+    const min = parseInt(m[2] || '0');
+    const ampm = m[3]?.toLowerCase();
     if (ampm === 'pm' && hour < 12) hour += 12;
     if (ampm === 'am' && hour === 12) hour = 0;
-    const d = new Date(today); d.setDate(d.getDate() + 1); d.setHours(hour, min, 0, 0);
-    return d;
+    return { hour, min };
   }
+
+  // Try direct ISO/date parse — but force 10 AM PT if time component is midnight (no time given)
+  const direct = new Date(timeStr);
+  if (!isNaN(direct.getTime()) && direct > new Date(0)) {
+    // Check if time was midnight (likely date-only input)
+    if (direct.getUTCHours() === 0 && direct.getUTCMinutes() === 0) {
+      const ts = pacificDate(direct.getUTCFullYear(), direct.getUTCMonth(), direct.getUTCDate(), DEFAULT_HOUR_PT, 0);
+      const d = new Date(ts);
+      if (d > new Date()) return d;
+    } else if (direct > new Date()) {
+      return direct;
+    }
+  }
+
+  // Match patterns like "tomorrow at 2pm", "tomorrow 3:00 PM", "tomorrow afternoon"
   if (lower.includes('tomorrow')) {
-    const d = new Date(today); d.setDate(d.getDate() + 1);
-    if (lower.includes('morning')) d.setHours(9, 0, 0, 0);
-    else if (lower.includes('afternoon')) d.setHours(14, 0, 0, 0);
-    else if (lower.includes('evening')) d.setHours(17, 0, 0, 0);
-    else d.setHours(10, 0, 0, 0);
-    return d;
+    const tmrw = new Date(todayPT); tmrw.setDate(tmrw.getDate() + 1);
+    let hour = DEFAULT_HOUR_PT, min = 0;
+    if (lower.includes('morning')) hour = 9;
+    else if (lower.includes('afternoon')) hour = 14;
+    else if (lower.includes('evening')) hour = 17;
+    else {
+      const t = extractTime(lower);
+      // Only use extracted time if there was an actual number match beyond "tomorrow"
+      if (lower.match(/\d/)) { hour = t.hour; min = t.min; }
+    }
+    const ts = pacificDate(tmrw.getFullYear(), tmrw.getMonth(), tmrw.getDate(), hour, min);
+    return new Date(ts);
   }
 
   // Match "in X hours/minutes"
@@ -51,7 +90,7 @@ function parseCallbackTime(timeStr) {
   if (inMatch) {
     const val = parseInt(inMatch[1]);
     const unit = inMatch[2];
-    const d = new Date(now);
+    const d = new Date();
     if (unit.startsWith('hour') || unit.startsWith('hr')) d.setHours(d.getHours() + val);
     else d.setMinutes(d.getMinutes() + val);
     return d;
@@ -60,33 +99,39 @@ function parseCallbackTime(timeStr) {
   // Match time-only like "2pm", "3:30 PM", "14:00"
   const timeMatch = lower.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/);
   if (timeMatch) {
-    let hour = parseInt(timeMatch[1]);
-    const min = parseInt(timeMatch[2] || '0');
-    const ampm = timeMatch[3];
-    if (ampm === 'pm' && hour < 12) hour += 12;
-    if (ampm === 'am' && hour === 12) hour = 0;
-    // Schedule for today if time hasn't passed, otherwise tomorrow
-    const d = new Date(today); d.setHours(hour, min, 0, 0);
-    if (d <= now) d.setDate(d.getDate() + 1);
-    return d;
+    const { hour, min } = extractTime(lower);
+    // Schedule for today PT if time hasn't passed, otherwise tomorrow
+    let ts = pacificDate(todayPT.getFullYear(), todayPT.getMonth(), todayPT.getDate(), hour, min);
+    if (new Date(ts) <= new Date()) {
+      const tmrw = new Date(todayPT); tmrw.setDate(tmrw.getDate() + 1);
+      ts = pacificDate(tmrw.getFullYear(), tmrw.getMonth(), tmrw.getDate(), hour, min);
+    }
+    return new Date(ts);
   }
 
-  // Match day names like "Monday at 2pm"
+  // Match day names like "Monday at 2pm", "Monday", "next Wednesday"
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   for (let i = 0; i < dayNames.length; i++) {
     if (lower.includes(dayNames[i])) {
-      const dayMatch = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/);
-      let hour = dayMatch ? parseInt(dayMatch[1]) : 10;
-      const min = dayMatch ? parseInt(dayMatch[2] || '0') : 0;
-      const ampm = dayMatch ? dayMatch[3] : null;
-      if (ampm === 'pm' && hour < 12) hour += 12;
-      if (ampm === 'am' && hour === 12) hour = 0;
-      const d = new Date(today);
+      const { hour, min } = lower.match(/\d/) ? extractTime(lower) : { hour: DEFAULT_HOUR_PT, min: 0 };
+      const d = new Date(todayPT);
       const diff = (i - d.getDay() + 7) % 7 || 7; // always next occurrence
       d.setDate(d.getDate() + diff);
-      d.setHours(hour, min, 0, 0);
-      return d;
+      const ts = pacificDate(d.getFullYear(), d.getMonth(), d.getDate(), hour, min);
+      return new Date(ts);
     }
+  }
+
+  // Fallback: if string has a date-like component, try parsing with default 10 AM PT
+  const dateMatch = lower.match(/(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/);
+  if (dateMatch) {
+    const month = parseInt(dateMatch[1]) - 1;
+    const day = parseInt(dateMatch[2]);
+    const year = dateMatch[3] ? (dateMatch[3].length === 2 ? 2000 + parseInt(dateMatch[3]) : parseInt(dateMatch[3])) : todayPT.getFullYear();
+    const { hour, min } = lower.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i) ? extractTime(lower) : { hour: DEFAULT_HOUR_PT, min: 0 };
+    const ts = pacificDate(year, month, day, hour, min);
+    const d = new Date(ts);
+    if (d > new Date()) return d;
   }
 
   return null;
