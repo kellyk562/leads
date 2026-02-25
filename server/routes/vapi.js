@@ -275,7 +275,6 @@ router.post('/call-status', async (req, res) => {
     const leadId = metadata.lead_id;
 
     const duration = message.durationSeconds || message.call?.duration || null;
-    const summary = message.summary || null;
     const transcript = message.transcript ? JSON.stringify(message.transcript) : null;
     const recordingUrl = message.recordingUrl || null;
     const cost = message.cost || null;
@@ -286,21 +285,44 @@ router.post('/call-status', async (req, res) => {
       : duration && duration > 0 ? 'completed'
       : 'failed';
 
+    // Extract structured analysis data from Vapi
+    const analysis = message.analysis || {};
+    let analysisSummary = null;
+    let sentiment = null;
+    let successEval = null;
+    let appointmentBooked = null;
+
+    for (const [, value] of Object.entries(analysis)) {
+      if (value.name === 'Call Summary') analysisSummary = value.result;
+      else if (value.name === 'Customer Sentiment') sentiment = value.result;
+      else if (value.name === 'Success Evaluation - Descriptive') successEval = value.result;
+      else if (value.name === 'Appointment Booked') appointmentBooked = value.result;
+    }
+
+    // Prefer analysis summary over generic summary
+    const summary = analysisSummary || message.summary || null;
+
+    // Merge analysis into metadata for storage
+    const callMetadata = {
+      ...metadata,
+      ...(Object.keys(analysis).length > 0 ? { analysis: { sentiment, successEval, appointmentBooked } } : {}),
+    };
+
     // Update call_logs
     if (vapiCallId) {
       const existingLog = await get('SELECT id FROM call_logs WHERE vapi_call_id = $1', [vapiCallId]);
       if (existingLog) {
         await run(
           `UPDATE call_logs SET status = $1, duration = $2, ended_at = CURRENT_TIMESTAMP,
-           summary = $3, transcript = $4, recording_url = $5, cost = $6
-           WHERE vapi_call_id = $7`,
-          [status, duration, summary, transcript, recordingUrl, cost, vapiCallId]
+           summary = $3, transcript = $4, recording_url = $5, cost = $6, metadata = $7
+           WHERE vapi_call_id = $8`,
+          [status, duration, summary, transcript, recordingUrl, cost, JSON.stringify(callMetadata), vapiCallId]
         );
       } else {
         await run(
-          `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, duration, ended_at, summary, transcript, recording_url, cost)
-           VALUES ($1, $2, 'outbound', $3, $4, CURRENT_TIMESTAMP, $5, $6, $7, $8)`,
-          [leadId, vapiCallId, status, duration, summary, transcript, recordingUrl, cost]
+          `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, duration, ended_at, summary, transcript, recording_url, cost, metadata)
+           VALUES ($1, $2, 'outbound', $3, $4, CURRENT_TIMESTAMP, $5, $6, $7, $8, $9)`,
+          [leadId, vapiCallId, status, duration, summary, transcript, recordingUrl, cost, JSON.stringify(callMetadata)]
         );
       }
     }
@@ -314,16 +336,17 @@ router.post('/call-status', async (req, res) => {
         [status, duration, summary, leadId]
       );
 
-      // Log to contact_history
-      const summaryText = summary ? summary.substring(0, 500) : `Call ${status}`;
+      // Log to contact_history with rich analysis data
+      const parts = [`AI Call Report - Duration: ${duration ? `${Math.round(duration)}s` : 'N/A'}`];
+      if (sentiment) parts.push(`Sentiment: ${sentiment}`);
+      if (successEval) parts.push(`Outcome: ${successEval}`);
+      if (appointmentBooked) parts.push('Appointment booked!');
+      if (summary) parts.push(summary.substring(0, 500));
+
       await run(
-        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
-         VALUES ($1, 'Phone', $2, $3)`,
-        [
-          leadId,
-          `AI Call Report - Duration: ${duration ? `${Math.round(duration)}s` : 'N/A'}. ${summaryText}`,
-          `Call ${status}`
-        ]
+        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome, recording_url)
+         VALUES ($1, 'Phone', $2, $3, $4)`,
+        [leadId, parts.join('. '), `Call ${status}`, recordingUrl]
       );
     }
 

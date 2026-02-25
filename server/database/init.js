@@ -189,6 +189,19 @@ async function initDatabase() {
       END $$;
     `);
 
+    // Add recording_url column to contact_history for AI call playback
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'contact_history' AND column_name = 'recording_url'
+        ) THEN
+          ALTER TABLE contact_history ADD COLUMN recording_url TEXT;
+        END IF;
+      END $$;
+    `);
+
     // Add source column to tasks (for auto-reminder tracking)
     await client.query(`
       DO $$

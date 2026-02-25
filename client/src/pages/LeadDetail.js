@@ -417,7 +417,8 @@ function LeadDetail() {
         notes: isStageChange ? null : h.notes,
         outcome: h.outcome,
         emailSubject: h.email_subject,
-        nextCallback: h.next_callback
+        nextCallback: h.next_callback,
+        recordingUrl: h.recording_url
       });
     });
 
@@ -917,6 +918,11 @@ function LeadDetail() {
                         <p style={{ fontWeight: 500, color: '#495057' }}>Subject: {item.emailSubject}</p>
                       )}
                       {item.notes && <p>{item.notes}</p>}
+                      {item.recordingUrl && (
+                        <div style={{ margin: '0.5rem 0' }}>
+                          <audio controls src={item.recordingUrl} style={{ width: '100%', height: '32px', borderRadius: '6px' }} />
+                        </div>
+                      )}
                       {item.outcome && !item.outcome.startsWith('Stage:') && (
                         <p><strong>Outcome:</strong> {item.outcome}</p>
                       )}
