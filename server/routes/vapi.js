@@ -238,9 +238,22 @@ router.post('/tool-handler', async (req, res) => {
   }
 });
 
+// Merge field replacer for email templates
+function renderTemplate(text, lead) {
+  return text
+    .replace(/\{\{dispensary_name\}\}/g, lead.dispensary_name || '')
+    .replace(/\{\{contact_name\}\}/g, lead.contact_name || lead.manager_name || '')
+    .replace(/\{\{manager_name\}\}/g, lead.manager_name || '')
+    .replace(/\{\{contact_email\}\}/g, lead.contact_email || '')
+    .replace(/\{\{current_pos_system\}\}/g, lead.current_pos_system || '')
+    .replace(/\{\{city\}\}/g, lead.city || '')
+    .replace(/\{\{state\}\}/g, lead.state || '')
+    .replace(/\{\{stage\}\}/g, lead.stage || '');
+}
+
 async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
-    const { owner_name, email, notes, dispensary_name } = args;
+    const { owner_name, email, notes, dispensary_name, send_intro_email } = args;
 
     // Critical path: update the lead record (fast, ~20-50ms)
     if (leadId) {
@@ -263,15 +276,44 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
     // Respond to Vapi immediately
     results.push({ toolCallId: toolCall.id, result: 'Contact info saved successfully' });
 
-    // Deferred: log to contact_history
+    // Deferred: log to contact_history + send intro email if requested
     if (leadId) {
-      deferAsync('save_contact_info:history', () =>
-        run(
+      deferAsync('save_contact_info:history+intro', async () => {
+        await run(
           `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
            VALUES ($1, 'Phone', $2, $3)`,
           [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
-        )
-      );
+        );
+
+        // Send Intro email template if requested and we have an email
+        if (send_intro_email && email && emailService.isConfigured()) {
+          try {
+            const template = await get(
+              `SELECT * FROM email_templates WHERE category = 'Intro' LIMIT 1`
+            );
+            if (template) {
+              const lead = await get('SELECT * FROM leads WHERE id = $1', [leadId]);
+              if (lead) {
+                const subject = renderTemplate(template.subject, lead);
+                const body = renderTemplate(template.body, lead);
+
+                await emailService.sendEmail({ to: email, subject, text: body });
+
+                await run(
+                  `INSERT INTO contact_history (lead_id, contact_method, notes, outcome, email_subject, email_template_id)
+                   VALUES ($1, 'Email', $2, $3, $4, $5)`,
+                  [leadId, body, `Intro email auto-sent (template: ${template.name})`, subject, template.id]
+                );
+                console.log(`Intro email sent to ${email} for lead ${leadId}`);
+              }
+            } else {
+              console.error('No Intro email template found in email_templates');
+            }
+          } catch (emailErr) {
+            console.error('Intro email send error:', emailErr);
+          }
+        }
+      });
     }
   } catch (error) {
     console.error('save_contact_info error:', error);
