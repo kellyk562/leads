@@ -10,7 +10,7 @@ router.get('/status', (req, res) => {
   const configured = emailService.isConfigured();
   res.json({
     configured,
-    user: configured ? (process.env.EMAIL_FROM || 'Resend configured') : null,
+    user: configured ? (process.env.EMAIL_FROM || process.env.GMAIL_USER) : null,
   });
 });
 
@@ -37,7 +37,7 @@ router.post('/send', [
 ], async (req, res) => {
   try {
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your environment variables.' });
+      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, and GMAIL_USER to your environment variables.' });
     }
 
     const errors = validationResult(req);
@@ -95,7 +95,7 @@ router.post('/batch', [
 ], async (req, res) => {
   try {
     if (!emailService.isConfigured()) {
-      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_USER and GMAIL_APP_PASSWORD to your environment variables.' });
+      return res.status(503).json({ error: 'Email is not configured. Add GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, and GMAIL_USER to your environment variables.' });
     }
 
     const errors = validationResult(req);
