@@ -34,7 +34,7 @@ function buildAssistantOverrides(lead) {
   return {
     firstMessage,
     variableValues: {
-      ownerName: ownerName || 'the owner',
+      ownerName: ownerName,
       dispensaryName: lead.dispensary_name || '',
       currentPOS: lead.current_pos_system || '',
       city: lead.city || '',

@@ -194,6 +194,11 @@ function buildZoomStartTime(demoDate, demoTime) {
   return parsed ? parsed.toISOString() : null;
 }
 
+// Fire-and-forget helper — runs async work in background, logs errors
+function deferAsync(label, fn) {
+  fn().catch(err => console.error(`[deferred] ${label} error:`, err));
+}
+
 // POST /api/vapi/tool-handler — handles in-call tool invocations from Vapi
 router.post('/tool-handler', async (req, res) => {
   try {
@@ -237,7 +242,7 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
   try {
     const { owner_name, email, notes, dispensary_name } = args;
 
-    // Update the lead record with collected contact info
+    // Critical path: update the lead record (fast, ~20-50ms)
     if (leadId) {
       const updates = [];
       const params = [];
@@ -253,15 +258,21 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
         params.push(leadId);
         await run(`UPDATE leads SET ${updates.join(', ')} WHERE id = $${paramIdx}`, params);
       }
-
-      await run(
-        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
-         VALUES ($1, 'Phone', $2, $3)`,
-        [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
-      );
     }
 
+    // Respond to Vapi immediately
     results.push({ toolCallId: toolCall.id, result: 'Contact info saved successfully' });
+
+    // Deferred: log to contact_history
+    if (leadId) {
+      deferAsync('save_contact_info:history', () =>
+        run(
+          `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+           VALUES ($1, 'Phone', $2, $3)`,
+          [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
+        )
+      );
+    }
   } catch (error) {
     console.error('save_contact_info error:', error);
     results.push({ toolCallId: toolCall.id, result: `Error saving contact info: ${error.message}` });
@@ -283,13 +294,13 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
     if (callbackTimeOfDay && callbackTimeOfDay !== 'not specified') timeParts.push(callbackTimeOfDay);
     const preferredTime = timeParts.length > 0 ? timeParts.join(' — ') : (args.callback_time || args.preferred_time || null);
 
+    // Critical path: insert callback + update lead (~40-100ms)
     await run(
       `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_reason, preferred_time)
        VALUES ($1, $2, $3, $4, $5)`,
       [leadId, vapiCallId, callbackName, callbackReason, preferredTime]
     );
 
-    // Update lead record with owner name and callback info
     if (leadId) {
       const updates = [];
       const params = [];
@@ -303,22 +314,29 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
         params.push(leadId);
         await run(`UPDATE leads SET ${updates.join(', ')} WHERE id = $${idx}`, params);
       }
+    }
 
-      // Log to contact_history
-      await run(
-        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
-         VALUES ($1, 'Phone', $2, $3)`,
-        [
-          leadId,
-          `AI Call - Callback requested by ${callbackName || 'contact'}. Day: ${callbackDay || 'N/A'}. Time: ${callbackTimeOfDay || 'N/A'}. Notes: ${callbackReason || 'N/A'}`,
-          'Callback Scheduled'
-        ]
-      );
+    // Respond to Vapi immediately
+    results.push({
+      toolCallId: toolCall.id,
+      result: 'Callback saved successfully',
+    });
 
-      // Auto-schedule follow-up AI call from callback_day + callback_time_of_day
-      const timeInput = buildScheduleInput(callbackDay, callbackTimeOfDay);
-      if (timeInput) {
-        try {
+    // Deferred: contact_history + auto-schedule follow-up
+    if (leadId) {
+      deferAsync('save_callback:history+schedule', async () => {
+        await run(
+          `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+           VALUES ($1, 'Phone', $2, $3)`,
+          [
+            leadId,
+            `AI Call - Callback requested by ${callbackName || 'contact'}. Day: ${callbackDay || 'N/A'}. Time: ${callbackTimeOfDay || 'N/A'}. Notes: ${callbackReason || 'N/A'}`,
+            'Callback Scheduled'
+          ]
+        );
+
+        const timeInput = buildScheduleInput(callbackDay, callbackTimeOfDay);
+        if (timeInput) {
           const scheduledFor = parseCallbackTime(timeInput);
           if (scheduledFor && scheduledFor > new Date()) {
             await pool.query(
@@ -328,16 +346,9 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
             );
             console.log(`Auto-scheduled follow-up call for lead ${leadId} at ${scheduledFor.toISOString()} (from: ${timeInput})`);
           }
-        } catch (schedErr) {
-          console.error('Auto-schedule follow-up error:', schedErr);
         }
-      }
+      });
     }
-
-    results.push({
-      toolCallId: toolCall.id,
-      result: 'Callback saved successfully',
-    });
   } catch (error) {
     console.error('save_callback error:', error);
     results.push({
@@ -356,81 +367,87 @@ async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results,
     const demoTime = args.preferred_time || args.demo_time || null;
     const notes = args.notes || null;
     const dispensaryName = metadata.dispensary_name || args.dispensary_name || '';
-    let zoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
+    const defaultZoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
 
-    // Auto-create a unique Zoom meeting if configured
-    if (zoomService.isConfigured()) {
-      try {
-        const startTime = buildZoomStartTime(demoDate, demoTime);
-        const meeting = await zoomService.createMeeting({
-          topic: `Weedhurry POS Demo – ${dispensaryName || contactName || 'Prospect'}`,
-          startTime,
-          duration: 30,
-        });
-        zoomLink = meeting.joinUrl;
-      } catch (zoomErr) {
-        console.error('Zoom meeting creation failed, using default link:', zoomErr.message);
-      }
-    }
-
-    // Save demo record
+    // Critical path: save demo record with default zoom link (~20-50ms)
     const demoResult = await run(
       `INSERT INTO demos (lead_id, vapi_call_id, contact_name, contact_email, dispensary_name, demo_date, demo_time, zoom_link, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
-      [leadId, vapiCallId, contactName, contactEmail, dispensaryName, demoDate, demoTime, zoomLink, notes]
+      [leadId, vapiCallId, contactName, contactEmail, dispensaryName, demoDate, demoTime, defaultZoomLink, notes]
     );
 
-    // Send confirmation email if we have an email address
-    let confirmationSent = false;
-    const emailTo = contactEmail || (leadId ? (await get('SELECT contact_email FROM leads WHERE id = $1', [leadId]))?.contact_email : null);
+    const demoId = demoResult.lastInsertRowid;
 
-    if (emailTo && emailService.isConfigured()) {
-      try {
-        const htmlBody = buildDemoConfirmationHtml({
-          contact_name: contactName || 'there',
-          dispensary_name: dispensaryName,
-          demo_date: demoDate || 'TBD',
-          demo_time: demoTime || 'TBD',
-          zoom_link: zoomLink,
-        });
-
-        await emailService.sendEmail({
-          to: emailTo,
-          subject: `Demo Confirmed - ${dispensaryName || 'Weedhurry POS'}`,
-          text: `Hi ${contactName || 'there'}, your demo has been scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Join here: ${zoomLink}`,
-          html: htmlBody,
-        });
-        confirmationSent = true;
-
-        // Update demo record
-        await run('UPDATE demos SET confirmation_sent = true WHERE id = $1', [demoResult.lastInsertRowid]);
-      } catch (emailError) {
-        console.error('Demo confirmation email error:', emailError);
-      }
-    }
-
-    // Update lead stage to "Demo Scheduled" (guard against regression)
-    if (leadId) {
-      const lead = await get('SELECT stage FROM leads WHERE id = $1', [leadId]);
-      if (lead && stageIndex(lead.stage) < stageIndex('Demo Scheduled')) {
-        await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Demo Scheduled', leadId]);
-      }
-
-      // Log to contact_history
-      await run(
-        `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
-         VALUES ($1, 'Phone', $2, $3)`,
-        [
-          leadId,
-          `AI Call - Demo scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Contact: ${contactName || 'N/A'}. ${confirmationSent ? 'Confirmation email sent.' : 'No confirmation email sent.'}`,
-          'Demo Scheduled'
-        ]
-      );
-    }
-
+    // Respond to Vapi immediately — no dead air
     results.push({
       toolCallId: toolCall.id,
-      result: `Demo scheduled successfully${confirmationSent ? ' and confirmation email sent' : ''}`,
+      result: 'Demo scheduled successfully and confirmation email will be sent shortly',
+    });
+
+    // Deferred: Zoom meeting creation + email + stage update + history logging
+    deferAsync('schedule_demo:zoom+email+history', async () => {
+      let zoomLink = defaultZoomLink;
+
+      // Create unique Zoom meeting (~500-1000ms)
+      if (zoomService.isConfigured()) {
+        try {
+          const startTime = buildZoomStartTime(demoDate, demoTime);
+          const meeting = await zoomService.createMeeting({
+            topic: `Weedhurry POS Demo – ${dispensaryName || contactName || 'Prospect'}`,
+            startTime,
+            duration: 30,
+          });
+          zoomLink = meeting.joinUrl;
+          await run('UPDATE demos SET zoom_link = $1 WHERE id = $2', [zoomLink, demoId]);
+        } catch (zoomErr) {
+          console.error('Zoom meeting creation failed, using default link:', zoomErr.message);
+        }
+      }
+
+      // Send confirmation email (~500-1500ms)
+      let confirmationSent = false;
+      const emailTo = contactEmail || (leadId ? (await get('SELECT contact_email FROM leads WHERE id = $1', [leadId]))?.contact_email : null);
+
+      if (emailTo && emailService.isConfigured()) {
+        try {
+          const htmlBody = buildDemoConfirmationHtml({
+            contact_name: contactName || 'there',
+            dispensary_name: dispensaryName,
+            demo_date: demoDate || 'TBD',
+            demo_time: demoTime || 'TBD',
+            zoom_link: zoomLink,
+          });
+
+          await emailService.sendEmail({
+            to: emailTo,
+            subject: `Demo Confirmed - ${dispensaryName || 'Weedhurry POS'}`,
+            text: `Hi ${contactName || 'there'}, your demo has been scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Join here: ${zoomLink}`,
+            html: htmlBody,
+          });
+          confirmationSent = true;
+          await run('UPDATE demos SET confirmation_sent = true WHERE id = $1', [demoId]);
+        } catch (emailError) {
+          console.error('Demo confirmation email error:', emailError);
+        }
+      }
+
+      // Update lead stage to "Demo Scheduled" (guard against regression)
+      if (leadId) {
+        const lead = await get('SELECT stage FROM leads WHERE id = $1', [leadId]);
+        if (lead && stageIndex(lead.stage) < stageIndex('Demo Scheduled')) {
+          await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Demo Scheduled', leadId]);
+        }
+
+        await run(
+          `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+           VALUES ($1, 'Phone', $2, $3)`,
+          [
+            leadId,
+            `AI Call - Demo scheduled for ${demoDate || 'TBD'} at ${demoTime || 'TBD'}. Contact: ${contactName || 'N/A'}. ${confirmationSent ? 'Confirmation email sent.' : 'No confirmation email sent.'}`,
+            'Demo Scheduled'
+          ]
+        );
+      }
     });
   } catch (error) {
     console.error('schedule_demo error:', error);
