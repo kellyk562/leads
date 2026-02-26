@@ -328,7 +328,6 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
     const callbackDay = args.callback_day || null;
     const callbackTimeOfDay = args.callback_time_of_day || null;
     const callbackReason = args.notes || args.callback_reason || null;
-    const dispensaryName = args.dispensary_name || metadata.dispensary_name || null;
 
     // Build a human-readable preferred_time string from day + time_of_day
     const timeParts = [];
