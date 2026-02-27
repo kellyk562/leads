@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
     let paramIndex = 1;
 
     if (search) {
-      sql += ` AND (l.dispensary_name ILIKE $${paramIndex} OR l.contact_name ILIKE $${paramIndex} OR l.manager_name ILIKE $${paramIndex} OR l.owner_name ILIKE $${paramIndex} OR l.address ILIKE $${paramIndex} OR l.city ILIKE $${paramIndex})`;
+      sql += ` AND (l.dispensary_name ILIKE $${paramIndex} OR l.contact_name ILIKE $${paramIndex} OR l.manager_name ILIKE $${paramIndex} OR l.owner_name ILIKE $${paramIndex} OR l.address ILIKE $${paramIndex} OR l.city ILIKE $${paramIndex} OR l.dispensary_number ILIKE $${paramIndex} OR l.contact_number ILIKE $${paramIndex})`;
       params.push(`%${search}%`);
       paramIndex++;
     }

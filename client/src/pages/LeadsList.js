@@ -338,7 +338,7 @@ function LeadsList() {
             <input
               type="text"
               className="search-input"
-              placeholder="Search dispensaries, contacts, addresses..."
+              placeholder="Search dispensaries, contacts, phone numbers..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               style={{ paddingLeft: '36px' }}
