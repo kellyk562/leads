@@ -644,7 +644,7 @@ router.post('/call-status', async (req, res) => {
 
     const duration = message.durationSeconds || message.call?.duration || null;
     const transcript = message.transcript ? JSON.stringify(message.transcript) : null;
-    const recordingUrl = message.recordingUrl || null;
+    const recordingUrl = message.recordingUrl || message.artifact?.recordingUrl || null;
     const cost = message.cost || null;
     const endedReason = message.endedReason || message.call?.endedReason || null;
     const status = endedReason === 'customer-did-not-answer' ? 'no_answer'
