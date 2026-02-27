@@ -470,7 +470,7 @@ router.post('/batch', async (req, res) => {
 
     // Validate leads have phone numbers
     const leads = await all(
-      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city FROM leads WHERE id = ANY($1)`,
+      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage FROM leads WHERE id = ANY($1)`,
       [leadIds]
     );
 
@@ -512,10 +512,22 @@ router.post('/batch', async (req, res) => {
             [vapiCall.id, lead.id]
           );
 
+          // Update stage from New Lead → Contacted (guard against regression)
+          if (lead.stage === 'New Lead' || !lead.stage) {
+            await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Contacted', lead.id]);
+          }
+
           await run(
             `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, started_at, metadata)
              VALUES ($1, $2, 'outbound', 'ringing', CURRENT_TIMESTAMP, $3)`,
             [lead.id, vapiCall.id, JSON.stringify(metadata)]
+          );
+
+          // Log to contact_history
+          await run(
+            `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+             VALUES ($1, 'Phone', $2, $3)`,
+            [lead.id, `AI outbound call initiated to ${phoneNumber} (batch)`, 'Call Initiated']
           );
 
           batchState.completed++;
@@ -580,7 +592,7 @@ function startScheduleExecutor() {
 
         // Trigger batch call logic
         const leads = await all(
-          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city FROM leads WHERE id = ANY($1)',
+          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage FROM leads WHERE id = ANY($1)',
           [leadIds]
         );
 
@@ -605,13 +617,27 @@ function startScheduleExecutor() {
 
             const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides: buildAssistantOverrides(lead), metadata });
             await run(
-              `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP WHERE id = $2`,
+              `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
               [vapiCall.id, lead.id]
             );
+
+            // Update stage from New Lead → Contacted (guard against regression)
+            if (lead.stage === 'New Lead' || !lead.stage) {
+              await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Contacted', lead.id]);
+            }
+
             await run(
               `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, started_at, metadata) VALUES ($1, $2, 'outbound', 'ringing', CURRENT_TIMESTAMP, $3)`,
               [lead.id, vapiCall.id, JSON.stringify(metadata)]
             );
+
+            // Log to contact_history
+            await run(
+              `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+               VALUES ($1, 'Phone', $2, $3)`,
+              [lead.id, `AI outbound call initiated to ${phoneNumber} (scheduled batch)`, 'Call Initiated']
+            );
+
             results.push({ leadId: lead.id, success: true, vapiCallId: vapiCall.id });
           } catch (err) {
             console.error(`Scheduled call error for lead ${lead.id}:`, err.message);
