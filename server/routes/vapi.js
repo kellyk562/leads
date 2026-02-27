@@ -338,6 +338,15 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
     // Detect IVR from notes
     const isIvr = !!(callbackReason && /ivr|automated|press \d|phone (tree|system|menu)/i.test(callbackReason));
 
+    // Deduplicate: skip if callback already saved for this call
+    if (vapiCallId) {
+      const existing = await get('SELECT id FROM callbacks WHERE vapi_call_id = $1', [vapiCallId]);
+      if (existing) {
+        results.push({ toolCallId: toolCall.id, result: 'Callback already saved for this call' });
+        return;
+      }
+    }
+
     // Critical path: insert callback + update lead (~40-100ms)
     await run(
       `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_reason, preferred_time)
@@ -413,6 +422,15 @@ async function handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results,
     const notes = args.notes || null;
     const dispensaryName = metadata.dispensary_name || args.dispensary_name || '';
     const defaultZoomLink = process.env.DEFAULT_ZOOM_LINK || 'https://zoom.us/j/your-meeting-id';
+
+    // Deduplicate: skip if demo already saved for this call
+    if (vapiCallId) {
+      const existing = await get('SELECT id FROM demos WHERE vapi_call_id = $1', [vapiCallId]);
+      if (existing) {
+        results.push({ toolCallId: toolCall.id, result: 'Demo already scheduled for this call' });
+        return;
+      }
+    }
 
     // Critical path: save demo record with default zoom link (~20-50ms)
     const demoResult = await run(
