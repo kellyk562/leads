@@ -251,9 +251,20 @@ function renderTemplate(text, lead) {
     .replace(/\{\{stage\}\}/g, lead.stage || '');
 }
 
+// Track intro emails already sent per call to prevent duplicates
+const introEmailSent = new Set();
+
 async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
-    const { owner_name, email, notes, dispensary_name, send_intro_email } = args;
+    const { owner_name, email, notes, dispensary_name } = args;
+
+    // Deduplicate: if we already processed save_contact_info for this call, just respond OK
+    const dedupeKey = vapiCallId ? `${vapiCallId}:contact_info` : null;
+    if (dedupeKey && introEmailSent.has(dedupeKey)) {
+      results.push({ toolCallId: toolCall.id, result: 'Contact info already saved for this call' });
+      return;
+    }
+    if (dedupeKey) introEmailSent.add(dedupeKey);
 
     // Critical path: update the lead record (fast, ~20-50ms)
     if (leadId) {
@@ -285,8 +296,8 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
           [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
         );
 
-        // Send Intro email template if requested and we have an email
-        if (send_intro_email && email && emailService.isConfigured()) {
+        // Auto-send Intro email whenever an email is captured during a call
+        if (email && emailService.isConfigured()) {
           try {
             const template = await get(
               `SELECT * FROM email_templates WHERE category = 'Intro' LIMIT 1`
@@ -313,6 +324,9 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
             console.error('Intro email send error:', emailErr);
           }
         }
+
+        // Clean up dedup key after 5 minutes
+        if (dedupeKey) setTimeout(() => introEmailSent.delete(dedupeKey), 5 * 60 * 1000);
       });
     }
   } catch (error) {
@@ -323,6 +337,29 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
 
 async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
+    // ── Email fallback: if agent called save_callback with an email but no
+    //    callback day/time, it likely meant to call save_contact_info instead.
+    //    Redirect to the intro email flow.
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+    // Check explicit email fields first, then scan notes/reason for embedded emails
+    let possibleEmail = args.email || args.owner_email || args.contact_email || null;
+    if (!possibleEmail) {
+      const textToScan = `${args.notes || ''} ${args.callback_reason || ''} ${args.callback_name || ''}`;
+      const emailMatch = textToScan.match(emailRegex);
+      if (emailMatch) possibleEmail = emailMatch[0];
+    }
+    const hasCallbackTime = !!(args.callback_day || args.callback_time_of_day || args.callback_time || args.preferred_time);
+    if (possibleEmail && possibleEmail.includes('@') && !hasCallbackTime) {
+      console.log(`save_callback got email "${possibleEmail}" with no callback time — redirecting to save_contact_info with send_intro_email`);
+      return handleSaveContactInfo({
+        leadId, vapiCallId, args: {
+          owner_name: args.owner_name || args.callback_name || null,
+          email: possibleEmail,
+          notes: args.notes || args.callback_reason || null,
+        }, toolCall, results, metadata
+      });
+    }
+
     // Map Vapi dashboard params → DB columns
     const callbackName = args.owner_name || args.callback_name || null;
     const callbackDay = args.callback_day || null;
