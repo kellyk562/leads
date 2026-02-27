@@ -64,10 +64,10 @@ export const leadsApi = {
   updateCadenceStep: (id, step) => api.patch(`/leads/${id}/cadence-step`, { step }),
 
   // Get daily briefing data
-  getBriefing: () => {
+  getBriefing: (range = 'week') => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = days[new Date().getDay()];
-    return api.get('/leads/briefing', { params: { day: todayDay } });
+    return api.get('/leads/briefing', { params: { day: todayDay, range } });
   },
 
   // Get duplicate lead groups

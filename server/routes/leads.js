@@ -120,9 +120,27 @@ router.get('/briefing', async (req, res) => {
     const todayDay = req.query.day && days.includes(req.query.day) ? req.query.day : days[new Date().getDay()];
     const todayDate = new Date().toISOString().split('T')[0];
 
+    // Time-range for activity metrics
+    const range = ['day', 'week', 'month'].includes(req.query.range) ? req.query.range : 'week';
+    let curStart, prevStart, prevEnd;
+    if (range === 'day') {
+      curStart = 'CURRENT_DATE';
+      prevStart = 'CURRENT_DATE - INTERVAL \'1 day\'';
+      prevEnd = 'CURRENT_DATE';
+    } else if (range === 'month') {
+      curStart = 'DATE_TRUNC(\'month\', CURRENT_DATE)';
+      prevStart = 'DATE_TRUNC(\'month\', CURRENT_DATE) - INTERVAL \'1 month\'';
+      prevEnd = 'DATE_TRUNC(\'month\', CURRENT_DATE)';
+    } else {
+      curStart = 'DATE_TRUNC(\'week\', CURRENT_DATE)';
+      prevStart = 'DATE_TRUNC(\'week\', CURRENT_DATE) - INTERVAL \'7 days\'';
+      prevEnd = 'DATE_TRUNC(\'week\', CURRENT_DATE)';
+    }
+
     const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
-           callsThisWeekRow, callsLastWeekRow, emailsThisWeekRow, emailsLastWeekRow,
-           dealsMovedThisWeekRow, dealsMovedLastWeekRow] = await Promise.all([
+           callsThisRow, callsLastRow, emailsThisRow, emailsLastRow,
+           dealsThisRow, dealsLastRow,
+           callLeads, emailLeads, dealLeads] = await Promise.all([
       // Today's callbacks
       db.all(`
         SELECT * FROM leads
@@ -168,55 +186,85 @@ router.get('/briefing', async (req, res) => {
         ORDER BY ch.contact_date DESC
         LIMIT 10
       `),
-      // Activity metrics: calls this week
+      // Activity counts: calls current period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Phone'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${curStart}
       `),
-      // Activity metrics: calls last week
+      // Activity counts: calls previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Phone'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
-          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${prevStart}
+          AND contact_date < ${prevEnd}
       `),
-      // Activity metrics: emails this week
+      // Activity counts: emails current period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Email'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${curStart}
       `),
-      // Activity metrics: emails last week
+      // Activity counts: emails previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Email'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
-          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${prevStart}
+          AND contact_date < ${prevEnd}
       `),
-      // Activity metrics: deals moved this week
+      // Activity counts: deals moved current period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE notes LIKE 'Stage changed%'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${curStart}
       `),
-      // Activity metrics: deals moved last week
+      // Activity counts: deals moved previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE notes LIKE 'Stage changed%'
-          AND contact_date >= DATE_TRUNC('week', CURRENT_DATE) - INTERVAL '7 days'
-          AND contact_date < DATE_TRUNC('week', CURRENT_DATE)
+          AND contact_date >= ${prevStart}
+          AND contact_date < ${prevEnd}
+      `),
+      // Lead details: calls in current period
+      db.all(`
+        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
+        FROM contact_history ch
+        JOIN leads l ON l.id = ch.lead_id
+        WHERE ch.contact_method = 'Phone'
+          AND ch.contact_date >= ${curStart}
+        ORDER BY l.dispensary_name ASC
+      `),
+      // Lead details: emails in current period
+      db.all(`
+        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
+        FROM contact_history ch
+        JOIN leads l ON l.id = ch.lead_id
+        WHERE ch.contact_method = 'Email'
+          AND ch.contact_date >= ${curStart}
+        ORDER BY l.dispensary_name ASC
+      `),
+      // Lead details: deals moved in current period
+      db.all(`
+        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
+        FROM contact_history ch
+        JOIN leads l ON l.id = ch.lead_id
+        WHERE ch.notes LIKE 'Stage changed%'
+          AND ch.contact_date >= ${curStart}
+        ORDER BY l.dispensary_name ASC
       `)
     ]);
 
     res.json({
       todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
-      callsThisWeek: parseInt(callsThisWeekRow?.count || 0),
-      callsLastWeek: parseInt(callsLastWeekRow?.count || 0),
-      emailsThisWeek: parseInt(emailsThisWeekRow?.count || 0),
-      emailsLastWeek: parseInt(emailsLastWeekRow?.count || 0),
-      dealsMovedThisWeek: parseInt(dealsMovedThisWeekRow?.count || 0),
-      dealsMovedLastWeek: parseInt(dealsMovedLastWeekRow?.count || 0),
+      callsThisWeek: parseInt(callsThisRow?.count || 0),
+      callsLastWeek: parseInt(callsLastRow?.count || 0),
+      callLeads: callLeads || [],
+      emailsThisWeek: parseInt(emailsThisRow?.count || 0),
+      emailsLastWeek: parseInt(emailsLastRow?.count || 0),
+      emailLeads: emailLeads || [],
+      dealsMovedThisWeek: parseInt(dealsThisRow?.count || 0),
+      dealsMovedLastWeek: parseInt(dealsLastRow?.count || 0),
+      dealLeads: dealLeads || [],
     });
   } catch (error) {
     console.error('Error fetching briefing:', error);

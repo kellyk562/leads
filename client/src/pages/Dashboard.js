@@ -28,6 +28,8 @@ function Dashboard() {
   const [showOverdue, setShowOverdue] = useState(true);
   const [quickLog, setQuickLog] = useState(null);
   const [scheduledEmails, setScheduledEmails] = useState([]);
+  const [activityRange, setActivityRange] = useState('week');
+  const [selectedCard, setSelectedCard] = useState(null);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
@@ -36,7 +38,7 @@ function Dashboard() {
     try {
       setLoading(true);
       const [briefRes, schedRes] = await Promise.all([
-        leadsApi.getBriefing(),
+        leadsApi.getBriefing(activityRange),
         emailApi.getScheduled().catch(() => ({ data: [] }))
       ]);
       setBriefing(briefRes.data);
@@ -47,7 +49,7 @@ function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activityRange]);
 
   const handleCancelScheduled = async (id) => {
     try {
@@ -120,22 +122,56 @@ function Dashboard() {
       {/* Your Activity */}
       {briefing && (
         <div className="callbacks-section">
-          <h2><FaChartLine /> Your Activity This Week</h2>
+          <h2><FaChartLine /> Your Activity {activityRange === 'day' ? 'Today' : activityRange === 'month' ? 'This Month' : 'This Week'}</h2>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            {[
+              { key: 'day', label: 'Day' },
+              { key: 'week', label: 'Week' },
+              { key: 'month', label: 'Month' },
+            ].map((opt) => (
+              <button
+                key={opt.key}
+                className="btn btn-sm"
+                style={{
+                  background: activityRange === opt.key ? '#2d5a27' : '#f8f9fa',
+                  color: activityRange === opt.key ? '#fff' : '#495057',
+                  border: activityRange === opt.key ? '1px solid #2d5a27' : '1px solid #dee2e6',
+                  borderRadius: '6px',
+                  padding: '0.25rem 0.75rem',
+                  fontSize: '0.8125rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+                onClick={() => { setActivityRange(opt.key); setSelectedCard(null); }}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '0.5rem 0' }}>
             {[
-              { label: 'Calls', count: briefing.callsThisWeek, last: briefing.callsLastWeek, trend: callsTrend, icon: FaPhoneAlt },
-              { label: 'Emails', count: briefing.emailsThisWeek, last: briefing.emailsLastWeek, trend: emailsTrend, icon: FaEnvelope },
-              { label: 'Deals Moved', count: briefing.dealsMovedThisWeek, last: briefing.dealsMovedLastWeek, trend: dealsTrend, icon: FaExchangeAlt },
+              { key: 'calls', label: 'Calls', count: briefing.callsThisWeek, last: briefing.callsLastWeek, trend: callsTrend, icon: FaPhoneAlt },
+              { key: 'emails', label: 'Emails', count: briefing.emailsThisWeek, last: briefing.emailsLastWeek, trend: emailsTrend, icon: FaEnvelope },
+              { key: 'deals', label: 'Deals Moved', count: briefing.dealsMovedThisWeek, last: briefing.dealsMovedLastWeek, trend: dealsTrend, icon: FaExchangeAlt },
             ].map((stat) => {
               const TrendIcon = stat.trend?.icon || FaArrowRight;
+              const isSelected = selectedCard === stat.key;
+              const lastLabel = activityRange === 'day' ? 'yesterday' : activityRange === 'month' ? 'last month' : 'last week';
               return (
-                <div key={stat.label} style={{
-                  background: '#f8f9fa',
-                  borderRadius: '10px',
-                  padding: '1rem',
-                  textAlign: 'center',
-                  border: '1px solid #e9ecef'
-                }}>
+                <div
+                  key={stat.key}
+                  onClick={() => setSelectedCard(isSelected ? null : stat.key)}
+                  style={{
+                    background: isSelected ? '#eaf5e9' : '#f8f9fa',
+                    borderRadius: '10px',
+                    padding: '1rem',
+                    textAlign: 'center',
+                    border: isSelected ? '2px solid #2d5a27' : '1px solid #e9ecef',
+                    cursor: 'pointer',
+                    boxShadow: isSelected ? '0 2px 8px rgba(45,90,39,0.15)' : 'none',
+                    transition: 'all 0.15s ease',
+                  }}
+                >
                   <stat.icon style={{ color: '#2d5a27', marginBottom: '0.25rem' }} />
                   <div style={{ fontSize: '1.75rem', fontWeight: 700, color: '#212529' }}>
                     {stat.count}
@@ -145,12 +181,74 @@ function Dashboard() {
                   </div>
                   <div style={{ fontSize: '0.75rem', color: stat.trend?.color, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.25rem' }}>
                     <TrendIcon size={10} />
-                    {stat.last} last week
+                    {stat.last} {lastLabel}
                   </div>
                 </div>
               );
             })}
           </div>
+          {/* Expandable lead list for selected activity card */}
+          {selectedCard && (() => {
+            const leadMap = { calls: briefing.callLeads, emails: briefing.emailLeads, deals: briefing.dealLeads };
+            const titleMap = { calls: 'Leads Called', emails: 'Leads Emailed', deals: 'Leads with Stage Changes' };
+            const leads = leadMap[selectedCard] || [];
+            return (
+              <div style={{ marginTop: '0.75rem', background: '#fff', border: '1px solid #e9ecef', borderRadius: '10px', padding: '0.75rem' }}>
+                <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: '#495057' }}>
+                  {titleMap[selectedCard]} ({leads.length})
+                </h4>
+                {leads.length === 0 ? (
+                  <p style={{ margin: 0, fontSize: '0.8125rem', color: '#6c757d' }}>No leads found for this period.</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {leads.map((lead) => (
+                      <Link
+                        key={lead.id}
+                        to={`/leads/${lead.id}`}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          textDecoration: 'none',
+                          color: 'inherit',
+                          padding: '0.5rem 0.75rem',
+                          background: '#f8f9fa',
+                          borderRadius: '8px',
+                          border: '1px solid #e9ecef',
+                        }}
+                      >
+                        <div>
+                          <span style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem' }}>{lead.dispensary_name}</span>
+                          <span
+                            className="stage-badge"
+                            style={{
+                              background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+                              color: STAGE_COLORS[lead.stage || 'New Lead'],
+                              fontSize: '0.65rem',
+                              marginLeft: '0.5rem',
+                            }}
+                          >
+                            {lead.stage || 'New Lead'}
+                          </span>
+                          {lead.manager_name && (
+                            <span style={{ fontSize: '0.8rem', color: '#6c757d', marginLeft: '0.5rem' }}>{lead.manager_name}</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          {lead.deal_value > 0 && (
+                            <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
+                              ${Number(lead.deal_value).toLocaleString()}/mo
+                            </span>
+                          )}
+                          <FaArrowRight size={10} style={{ color: '#adb5bd' }} />
+                        </div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 
