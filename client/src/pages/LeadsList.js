@@ -35,6 +35,7 @@ function LeadsList() {
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '');
   const [ivrFilter, setIvrFilter] = useState(searchParams.get('has_ivr') === 'true');
+  const [callbackFilter, setCallbackFilter] = useState(searchParams.get('has_callback') === 'true');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -61,6 +62,7 @@ function LeadsList() {
       if (search) params.search = search;
       if (stageFilter) params.stage = stageFilter;
       if (ivrFilter) params.has_ivr = 'true';
+      if (callbackFilter) params.has_callback = 'true';
 
       const response = await leadsApi.getAll(params);
       setLeads(response.data);
@@ -70,7 +72,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, stageFilter, ivrFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -82,14 +84,15 @@ function LeadsList() {
     if (search) params.set('search', search);
     if (stageFilter) params.set('stage', stageFilter);
     if (ivrFilter) params.set('has_ivr', 'true');
+    if (callbackFilter) params.set('has_callback', 'true');
     setSearchParams(params);
-  }, [search, stageFilter, ivrFilter, setSearchParams]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, setSearchParams]);
 
   // Clear selection on filter change
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAll(false);
-  }, [search, stageFilter, ivrFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, sortBy, sortOrder]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -355,6 +358,20 @@ function LeadsList() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+
+          <button
+            className={`btn btn-sm ${callbackFilter ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setCallbackFilter(!callbackFilter)}
+            style={{
+              whiteSpace: 'nowrap',
+              fontSize: '0.8125rem',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+            }}
+            title="Filter leads with pending callbacks"
+          >
+            {callbackFilter ? 'Callbacks Only' : 'Callbacks'}
+          </button>
 
           <button
             className={`btn btn-sm ${ivrFilter ? 'btn-danger' : 'btn-outline'}`}
