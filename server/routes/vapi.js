@@ -211,6 +211,24 @@ router.post('/tool-handler', async (req, res) => {
     const leadId = metadata.lead_id;
     const vapiCallId = message.call?.id || req.body.call?.id || null;
 
+    // Extract conversation transcript for email detection fallback
+    // Vapi may send it as message.transcript, message.artifact.transcript,
+    // or as an array of message objects in message.messages
+    let transcript = '';
+    if (message.transcript) {
+      transcript = message.transcript;
+    } else if (message.artifact?.transcript) {
+      transcript = message.artifact.transcript;
+    } else if (Array.isArray(message.messages)) {
+      transcript = message.messages.map(m => m.content || m.text || '').join(' ');
+    }
+    transcript = transcript.toString().substring(0, 5000);
+    if (!transcript) {
+      // Log the top-level keys so we can find where the transcript lives
+      console.log('Vapi tool-handler payload keys:', Object.keys(message));
+      if (message.call) console.log('Vapi call keys:', Object.keys(message.call));
+    }
+
     const results = [];
 
     for (const toolCall of message.toolCalls) {
@@ -220,7 +238,7 @@ router.post('/tool-handler', async (req, res) => {
       if (fnName === 'save_contact_info') {
         await handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, results, metadata });
       } else if (fnName === 'save_callback') {
-        await handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata });
+        await handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata, transcript });
       } else if (fnName === 'schedule_demo') {
         await handleScheduleDemo({ leadId, vapiCallId, args, toolCall, results, metadata });
       } else {
@@ -335,29 +353,35 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
   }
 }
 
-async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata }) {
+async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata, transcript }) {
   try {
     // Log all args for debugging
     console.log(`save_callback args for lead ${leadId}:`, JSON.stringify(args));
+    if (transcript) console.log(`save_callback transcript snippet (last 500):`, transcript.slice(-500));
 
-    // ── Email fallback: if agent called save_callback with an email anywhere
-    //    in the args, redirect to save_contact_info to save email + send intro.
-    //    The agent frequently calls save_callback instead of save_contact_info
-    //    when the person provides an email address.
+    // ── Email fallback: if an email address appears anywhere — in tool args
+    //    OR in the conversation transcript — redirect to save_contact_info
+    //    to save the email and auto-send the intro email.
     const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-    // Check explicit email fields first, then scan ALL text fields for embedded emails
+
+    // 1. Check explicit email fields in args
     let possibleEmail = args.email || args.owner_email || args.contact_email || null;
+
+    // 2. Scan all text fields in args
     if (!possibleEmail) {
-      const textToScan = [
-        args.notes, args.callback_reason, args.callback_name,
-        args.callback_day, args.callback_time_of_day, args.callback_time,
-        args.preferred_time, args.owner_name
-      ].filter(Boolean).join(' ');
+      const textToScan = Object.values(args).filter(v => typeof v === 'string').join(' ');
       const emailMatch = textToScan.match(emailRegex);
       if (emailMatch) possibleEmail = emailMatch[0];
     }
-    if (possibleEmail && possibleEmail.includes('@')) {
-      console.log(`save_callback got email "${possibleEmail}" — redirecting to save_contact_info for intro email`);
+
+    // 3. Last resort: scan conversation transcript for email addresses
+    if (!possibleEmail && transcript) {
+      const emailMatch = transcript.match(emailRegex);
+      if (emailMatch) possibleEmail = emailMatch[0];
+    }
+
+    if (possibleEmail) {
+      console.log(`save_callback detected email "${possibleEmail}" — redirecting to save_contact_info for intro email`);
       return handleSaveContactInfo({
         leadId, vapiCallId, args: {
           owner_name: args.owner_name || args.callback_name || null,
