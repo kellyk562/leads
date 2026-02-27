@@ -20,7 +20,7 @@ const validateLead = [
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, stage, has_ivr, has_callback, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, stage, has_ivr, has_callback, has_intro_email, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = `SELECT l.*, sub.last_contact_date,
       EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact,
@@ -89,6 +89,10 @@ router.get('/', async (req, res) => {
 
     if (has_callback === 'true') {
       sql += ` AND EXISTS (SELECT 1 FROM callbacks cb WHERE cb.lead_id = l.id AND cb.status = 'pending')`;
+    }
+
+    if (has_intro_email === 'true') {
+      sql += ` AND EXISTS (SELECT 1 FROM contact_history ch WHERE ch.lead_id = l.id AND ch.contact_method = 'Email' AND ch.outcome LIKE 'Intro email auto-sent%')`;
     }
 
     const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value', 'lead_score'];

@@ -36,6 +36,7 @@ function LeadsList() {
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '');
   const [ivrFilter, setIvrFilter] = useState(searchParams.get('has_ivr') === 'true');
   const [callbackFilter, setCallbackFilter] = useState(searchParams.get('has_callback') === 'true');
+  const [introEmailFilter, setIntroEmailFilter] = useState(searchParams.get('has_intro_email') === 'true');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -68,6 +69,7 @@ function LeadsList() {
       if (stageFilter) params.stage = stageFilter;
       if (ivrFilter) params.has_ivr = 'true';
       if (callbackFilter) params.has_callback = 'true';
+      if (introEmailFilter) params.has_intro_email = 'true';
 
       const response = await leadsApi.getAll(params);
       setLeads(response.data);
@@ -77,7 +79,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, stageFilter, ivrFilter, callbackFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -90,14 +92,15 @@ function LeadsList() {
     if (stageFilter) params.set('stage', stageFilter);
     if (ivrFilter) params.set('has_ivr', 'true');
     if (callbackFilter) params.set('has_callback', 'true');
+    if (introEmailFilter) params.set('has_intro_email', 'true');
     setSearchParams(params);
-  }, [search, stageFilter, ivrFilter, callbackFilter, setSearchParams]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, setSearchParams]);
 
   // Clear selection on filter change
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAll(false);
-  }, [search, stageFilter, ivrFilter, callbackFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, sortBy, sortOrder]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -410,6 +413,21 @@ function LeadsList() {
             title="Filter leads with IVR/automated phone systems"
           >
             {ivrFilter ? 'IVR Only' : 'IVR'}
+          </button>
+
+          <button
+            className={`btn btn-sm ${introEmailFilter ? 'btn-primary' : 'btn-outline'}`}
+            onClick={() => setIntroEmailFilter(!introEmailFilter)}
+            style={{
+              whiteSpace: 'nowrap',
+              fontSize: '0.8125rem',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              ...(introEmailFilter ? { background: '#7c3aed', borderColor: '#7c3aed' } : {}),
+            }}
+            title="Filter leads that received an intro email via AI call"
+          >
+            {introEmailFilter ? 'Intro Sent' : 'Intro Email'}
           </button>
 
           <select
