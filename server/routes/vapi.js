@@ -335,6 +335,9 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
     if (callbackTimeOfDay && callbackTimeOfDay !== 'not specified') timeParts.push(callbackTimeOfDay);
     const preferredTime = timeParts.length > 0 ? timeParts.join(' — ') : (args.callback_time || args.preferred_time || null);
 
+    // Detect IVR from notes
+    const isIvr = !!(callbackReason && /ivr|automated|press \d|phone (tree|system|menu)/i.test(callbackReason));
+
     // Critical path: insert callback + update lead (~40-100ms)
     await run(
       `INSERT INTO callbacks (lead_id, vapi_call_id, callback_name, callback_reason, preferred_time)
@@ -349,6 +352,7 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
 
       if (callbackName) { updates.push(`manager_name = $${idx++}`); params.push(callbackName); }
       if (preferredTime) { updates.push(`callback_time_from = $${idx++}`); params.push(preferredTime); }
+      if (isIvr) { updates.push(`has_ivr = $${idx++}`); params.push(true); }
 
       if (updates.length > 0) {
         updates.push('updated_at = CURRENT_TIMESTAMP');

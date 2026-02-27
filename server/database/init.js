@@ -278,7 +278,8 @@ async function initDatabase() {
       { name: 'call_status', type: 'TEXT' },
       { name: 'call_duration', type: 'INTEGER' },
       { name: 'last_called_at', type: 'TIMESTAMP' },
-      { name: 'call_summary', type: 'TEXT' }
+      { name: 'call_summary', type: 'TEXT' },
+      { name: 'has_ivr', type: 'BOOLEAN DEFAULT FALSE' }
     ];
     for (const col of vapiLeadColumns) {
       await client.query(`

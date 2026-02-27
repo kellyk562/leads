@@ -34,6 +34,7 @@ function LeadsList() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState(searchParams.get('search') || '');
   const [stageFilter, setStageFilter] = useState(searchParams.get('stage') || '');
+  const [ivrFilter, setIvrFilter] = useState(searchParams.get('has_ivr') === 'true');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -59,6 +60,7 @@ function LeadsList() {
       };
       if (search) params.search = search;
       if (stageFilter) params.stage = stageFilter;
+      if (ivrFilter) params.has_ivr = 'true';
 
       const response = await leadsApi.getAll(params);
       setLeads(response.data);
@@ -68,7 +70,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, stageFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -79,14 +81,15 @@ function LeadsList() {
     const params = new URLSearchParams();
     if (search) params.set('search', search);
     if (stageFilter) params.set('stage', stageFilter);
+    if (ivrFilter) params.set('has_ivr', 'true');
     setSearchParams(params);
-  }, [search, stageFilter, setSearchParams]);
+  }, [search, stageFilter, ivrFilter, setSearchParams]);
 
   // Clear selection on filter change
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAll(false);
-  }, [search, stageFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, sortBy, sortOrder]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -352,6 +355,20 @@ function LeadsList() {
               <option key={s} value={s}>{s}</option>
             ))}
           </select>
+
+          <button
+            className={`btn btn-sm ${ivrFilter ? 'btn-danger' : 'btn-outline'}`}
+            onClick={() => setIvrFilter(!ivrFilter)}
+            style={{
+              whiteSpace: 'nowrap',
+              fontSize: '0.8125rem',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+            }}
+            title="Filter leads with IVR/automated phone systems"
+          >
+            {ivrFilter ? 'IVR Only' : 'IVR'}
+          </button>
 
           <select
             className="filter-select"

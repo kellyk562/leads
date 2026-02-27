@@ -20,7 +20,7 @@ const validateLead = [
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, stage, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, stage, has_ivr, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = `SELECT l.*, sub.last_contact_date,
       EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact,
@@ -70,6 +70,10 @@ router.get('/', async (req, res) => {
       sql += ` AND l.stage = $${paramIndex}`;
       params.push(stage);
       paramIndex++;
+    }
+
+    if (has_ivr === 'true') {
+      sql += ` AND l.has_ivr = true`;
     }
 
     const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value', 'lead_score'];
