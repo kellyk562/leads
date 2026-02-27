@@ -61,8 +61,19 @@ router.get('/', async (req, res) => {
     let paramIndex = 1;
 
     if (search) {
-      sql += ` AND (l.dispensary_name ILIKE $${paramIndex} OR l.contact_name ILIKE $${paramIndex} OR l.manager_name ILIKE $${paramIndex} OR l.owner_name ILIKE $${paramIndex} OR l.address ILIKE $${paramIndex} OR l.city ILIKE $${paramIndex} OR l.dispensary_number ILIKE $${paramIndex} OR l.contact_number ILIKE $${paramIndex})`;
+      const digitsOnly = search.replace(/\D/g, '');
+      const hasPhoneDigits = digitsOnly.length >= 3;
+
+      sql += ` AND (l.dispensary_name ILIKE $${paramIndex} OR l.contact_name ILIKE $${paramIndex} OR l.manager_name ILIKE $${paramIndex} OR l.owner_name ILIKE $${paramIndex} OR l.address ILIKE $${paramIndex} OR l.city ILIKE $${paramIndex}`;
+      if (hasPhoneDigits) {
+        sql += ` OR REGEXP_REPLACE(l.dispensary_number, '\\D', '', 'g') LIKE $${paramIndex + 1} OR REGEXP_REPLACE(l.contact_number, '\\D', '', 'g') LIKE $${paramIndex + 1}`;
+      }
+      sql += `)`;
       params.push(`%${search}%`);
+      if (hasPhoneDigits) {
+        params.push(`%${digitsOnly}%`);
+        paramIndex++;
+      }
       paramIndex++;
     }
 
