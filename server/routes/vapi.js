@@ -337,20 +337,27 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
 
 async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results, metadata }) {
   try {
-    // ── Email fallback: if agent called save_callback with an email but no
-    //    callback day/time, it likely meant to call save_contact_info instead.
-    //    Redirect to the intro email flow.
+    // Log all args for debugging
+    console.log(`save_callback args for lead ${leadId}:`, JSON.stringify(args));
+
+    // ── Email fallback: if agent called save_callback with an email anywhere
+    //    in the args, redirect to save_contact_info to save email + send intro.
+    //    The agent frequently calls save_callback instead of save_contact_info
+    //    when the person provides an email address.
     const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
-    // Check explicit email fields first, then scan notes/reason for embedded emails
+    // Check explicit email fields first, then scan ALL text fields for embedded emails
     let possibleEmail = args.email || args.owner_email || args.contact_email || null;
     if (!possibleEmail) {
-      const textToScan = `${args.notes || ''} ${args.callback_reason || ''} ${args.callback_name || ''}`;
+      const textToScan = [
+        args.notes, args.callback_reason, args.callback_name,
+        args.callback_day, args.callback_time_of_day, args.callback_time,
+        args.preferred_time, args.owner_name
+      ].filter(Boolean).join(' ');
       const emailMatch = textToScan.match(emailRegex);
       if (emailMatch) possibleEmail = emailMatch[0];
     }
-    const hasCallbackTime = !!(args.callback_day || args.callback_time_of_day || args.callback_time || args.preferred_time);
-    if (possibleEmail && possibleEmail.includes('@') && !hasCallbackTime) {
-      console.log(`save_callback got email "${possibleEmail}" with no callback time — redirecting to save_contact_info with send_intro_email`);
+    if (possibleEmail && possibleEmail.includes('@')) {
+      console.log(`save_callback got email "${possibleEmail}" — redirecting to save_contact_info for intro email`);
       return handleSaveContactInfo({
         leadId, vapiCallId, args: {
           owner_name: args.owner_name || args.callback_name || null,
