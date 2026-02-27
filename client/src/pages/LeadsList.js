@@ -51,6 +51,11 @@ function LeadsList() {
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [vapiConfigured, setVapiConfigured] = useState(false);
   const [batchCalling, setBatchCalling] = useState(false);
+  const [batchCallOpen, setBatchCallOpen] = useState(false);
+  const [batchCallMode, setBatchCallMode] = useState('now'); // 'now' or 'schedule'
+  const [batchScheduleDate, setBatchScheduleDate] = useState('');
+  const [batchScheduleTime, setBatchScheduleTime] = useState('');
+  const [batchDelay, setBatchDelay] = useState(30);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -228,23 +233,41 @@ function LeadsList() {
     }
   };
 
-  const handleBatchCall = async () => {
+  const openBatchCall = () => {
     const selectedLeads = leads.filter(l => selectedIds.has(l.id));
     const withPhone = selectedLeads.filter(l => l.dispensary_number || l.contact_number);
-    const skipped = selectedLeads.length - withPhone.length;
 
     if (withPhone.length === 0) {
       toast.error('No selected leads have phone numbers');
       return;
     }
 
-    const msg = `Start AI calls to ${withPhone.length} lead${withPhone.length !== 1 ? 's' : ''}?${skipped > 0 ? ` (${skipped} will be skipped - no phone)` : ''}\n\nEstimated duration: ~${Math.round(withPhone.length * 30 / 60)} minutes`;
-    if (!window.confirm(msg)) return;
+    // Default schedule date/time to now + 1 hour
+    const now = new Date();
+    now.setHours(now.getHours() + 1, 0, 0, 0);
+    setBatchScheduleDate(now.toISOString().split('T')[0]);
+    setBatchScheduleTime(now.toTimeString().slice(0, 5));
+    setBatchCallMode('now');
+    setBatchDelay(30);
+    setBatchCallOpen(true);
+  };
 
+  const handleBatchCallConfirm = async () => {
     setBatchCalling(true);
     try {
-      const res = await callsApi.batchCall([...selectedIds]);
-      toast.success(`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})${res.data.skipped > 0 ? `, ${res.data.skipped} skipped` : ''}`);
+      if (batchCallMode === 'now') {
+        const res = await callsApi.batchCall([...selectedIds], batchDelay);
+        toast.success(`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})${res.data.skipped > 0 ? `, ${res.data.skipped} skipped` : ''}`);
+      } else {
+        const scheduledFor = new Date(`${batchScheduleDate}T${batchScheduleTime}`).toISOString();
+        await callsApi.createSchedule({
+          leadIds: [...selectedIds],
+          scheduledFor,
+          delaySeconds: batchDelay,
+        });
+        toast.success(`${selectedIds.size} calls scheduled for ${batchScheduleDate} at ${batchScheduleTime}`);
+      }
+      setBatchCallOpen(false);
       setSelectedIds(new Set());
       setSelectAll(false);
     } catch (error) {
@@ -257,6 +280,8 @@ function LeadsList() {
 
   const batchLeadsWithEmail = leads.filter(l => selectedIds.has(l.id) && l.contact_email).length;
   const batchLeadsWithoutEmail = selectedIds.size - batchLeadsWithEmail;
+  const batchLeadsWithPhone = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number)).length;
+  const batchLeadsWithoutPhone = selectedIds.size - batchLeadsWithPhone;
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -626,10 +651,9 @@ function LeadsList() {
               <button
                 className="btn btn-sm"
                 style={{ background: 'rgba(124,58,237,0.8)', color: 'white', border: 'none' }}
-                onClick={handleBatchCall}
-                disabled={batchCalling}
+                onClick={openBatchCall}
               >
-                <FaRobot /> {batchCalling ? 'Starting...' : 'AI Call'}
+                <FaRobot /> AI Call
               </button>
             )}
             <button
@@ -795,6 +819,102 @@ function LeadsList() {
                   </button>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch AI Call Modal */}
+      {batchCallOpen && (
+        <div className="modal-overlay" onClick={() => setBatchCallOpen(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px' }}>
+            <div className="modal-header">
+              <h3><FaRobot style={{ marginRight: '0.5rem' }} />AI Call — {selectedIds.size} Lead{selectedIds.size !== 1 ? 's' : ''}</h3>
+              <button className="modal-close" onClick={() => setBatchCallOpen(false)}>&times;</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '0.75rem' }}>
+                <strong>{batchLeadsWithPhone}</strong> lead{batchLeadsWithPhone !== 1 ? 's' : ''} will be called.
+              </p>
+              {batchLeadsWithoutPhone > 0 && (
+                <p style={{ color: '#e65100', marginBottom: '0.75rem' }}>
+                  <FaExclamationTriangle style={{ marginRight: '0.25rem' }} />
+                  {batchLeadsWithoutPhone} lead{batchLeadsWithoutPhone !== 1 ? 's' : ''} will be skipped (no phone number).
+                </p>
+              )}
+
+              {/* Call Now / Schedule toggle */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                <button
+                  className={`btn btn-sm ${batchCallMode === 'now' ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setBatchCallMode('now')}
+                  style={{ flex: 1 }}
+                >
+                  Call Now
+                </button>
+                <button
+                  className={`btn btn-sm ${batchCallMode === 'schedule' ? 'btn-primary' : 'btn-outline'}`}
+                  onClick={() => setBatchCallMode('schedule')}
+                  style={{ flex: 1 }}
+                >
+                  Schedule for Later
+                </button>
+              </div>
+
+              {batchCallMode === 'schedule' && (
+                <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.8125rem' }}>Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={batchScheduleDate}
+                      onChange={(e) => setBatchScheduleDate(e.target.value)}
+                      min={new Date().toISOString().split('T')[0]}
+                    />
+                  </div>
+                  <div className="form-group" style={{ flex: 1, marginBottom: 0 }}>
+                    <label style={{ fontSize: '0.8125rem' }}>Time</label>
+                    <input
+                      type="time"
+                      className="form-input"
+                      value={batchScheduleTime}
+                      onChange={(e) => setBatchScheduleTime(e.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label style={{ fontSize: '0.8125rem' }}>Delay between calls (seconds)</label>
+                <select
+                  className="form-input"
+                  value={batchDelay}
+                  onChange={(e) => setBatchDelay(Number(e.target.value))}
+                >
+                  <option value={15}>15s</option>
+                  <option value={30}>30s (default)</option>
+                  <option value={60}>60s</option>
+                  <option value={90}>90s</option>
+                  <option value={120}>2 min</option>
+                </select>
+                <p style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.25rem' }}>
+                  Estimated duration: ~{Math.max(1, Math.round(batchLeadsWithPhone * batchDelay / 60))} min
+                </p>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-outline" onClick={() => setBatchCallOpen(false)}>Cancel</button>
+              <button
+                className="btn"
+                style={{ background: '#7c3aed', color: 'white', border: 'none' }}
+                disabled={batchCalling || batchLeadsWithPhone === 0 || (batchCallMode === 'schedule' && (!batchScheduleDate || !batchScheduleTime))}
+                onClick={handleBatchCallConfirm}
+              >
+                {batchCalling ? 'Starting...' : batchCallMode === 'now'
+                  ? `Call ${batchLeadsWithPhone} Lead${batchLeadsWithPhone !== 1 ? 's' : ''} Now`
+                  : `Schedule ${batchLeadsWithPhone} Call${batchLeadsWithPhone !== 1 ? 's' : ''}`}
+              </button>
             </div>
           </div>
         </div>
