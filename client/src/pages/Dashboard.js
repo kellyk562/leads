@@ -19,9 +19,10 @@ import {
   FaBackward,
   FaForward,
   FaChevronDown,
-  FaChevronUp
+  FaChevronUp,
+  FaRobot
 } from 'react-icons/fa';
-import { leadsApi, emailApi } from '../services/api';
+import { leadsApi, emailApi, callsApi } from '../services/api';
 import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 import QuickLogModal from '../components/QuickLogModal';
 import ClickToCall from '../components/ClickToCall';
@@ -122,6 +123,7 @@ function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [quickLog, setQuickLog] = useState(null);
   const [scheduledEmails, setScheduledEmails] = useState([]);
+  const [scheduledCalls, setScheduledCalls] = useState([]);
   const [activityRange, setActivityRange] = useState('day');
   const [selectedCard, setSelectedCard] = useState(null);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
@@ -136,12 +138,14 @@ function Dashboard() {
   const fetchBriefing = useCallback(async () => {
     try {
       setLoading(true);
-      const [briefRes, schedRes] = await Promise.all([
+      const [briefRes, schedRes, callSchedRes] = await Promise.all([
         leadsApi.getBriefing(activityRange),
-        emailApi.getScheduled().catch(() => ({ data: [] }))
+        emailApi.getScheduled().catch(() => ({ data: [] })),
+        callsApi.getSchedules().catch(() => ({ data: [] }))
       ]);
       setBriefing(briefRes.data);
       setScheduledEmails(schedRes.data);
+      setScheduledCalls((callSchedRes.data || []).filter(s => s.status === 'pending'));
     } catch (error) {
       console.error('Error fetching briefing:', error);
       toast.error('Failed to load briefing');
@@ -158,6 +162,17 @@ function Dashboard() {
     } catch (error) {
       console.error('Error cancelling scheduled email:', error);
       toast.error('Failed to cancel scheduled email');
+    }
+  };
+
+  const handleCancelScheduledCall = async (id) => {
+    try {
+      await callsApi.cancelSchedule(id);
+      toast.success('Scheduled call cancelled');
+      setScheduledCalls(prev => prev.filter(s => s.id !== id));
+    } catch (error) {
+      console.error('Error cancelling scheduled call:', error);
+      toast.error('Failed to cancel scheduled call');
     }
   };
 
@@ -602,6 +617,41 @@ function Dashboard() {
               </div>
             );
           })()}
+        </div>
+      )}
+
+      {/* Scheduled AI Calls */}
+      {scheduledCalls.length > 0 && (
+        <div className="callbacks-section">
+          <h2><FaRobot /> Scheduled AI Calls ({scheduledCalls.length})</h2>
+          <div className="callback-list">
+            {scheduledCalls.map((sc) => {
+              const leadCount = Array.isArray(sc.lead_ids)
+                ? sc.lead_ids.length
+                : (typeof sc.lead_ids === 'string' ? JSON.parse(sc.lead_ids).length : 0);
+              return (
+                <div key={sc.id} className="callback-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ flex: 1 }}>
+                    <h4 style={{ margin: 0 }}>
+                      {sc.list_name || `${leadCount} lead${leadCount !== 1 ? 's' : ''}`}
+                    </h4>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: '#6c757d' }}>
+                      {sc.scheduled_for ? format(new Date(sc.scheduled_for), 'MMM d, h:mm a') : 'Pending'}
+                      {sc.delay_seconds ? ` · ${sc.delay_seconds}s delay` : ''}
+                    </p>
+                  </div>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    style={{ color: '#dc3545', borderColor: '#dc3545', marginLeft: '0.5rem' }}
+                    onClick={() => handleCancelScheduledCall(sc.id)}
+                    title="Cancel"
+                  >
+                    <FaTimes />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
