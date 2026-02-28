@@ -718,6 +718,13 @@ router.post('/call-status', async (req, res) => {
     // Prefer analysis summary over generic summary
     const summary = analysisSummary || message.summary || null;
 
+    // Override status to voicemail if Call Summary indicates voicemail
+    // (most reliable detection — Vapi's AI analysis correctly identifies voicemail even when
+    // endedReason and transcript fields don't)
+    if (status === 'completed' && summary && /forwarded.{0,20}voicemail|sent to voicemail|went to voicemail|reached.{0,20}voicemail|no live person|voicemail.{0,20}no.{0,20}conversation/i.test(summary)) {
+      status = 'voicemail';
+    }
+
     // Merge analysis into metadata for storage
     const callMetadata = {
       ...metadata,
