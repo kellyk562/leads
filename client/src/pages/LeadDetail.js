@@ -645,7 +645,10 @@ function LeadDetail() {
               <span>{getCadenceLabel(lead.cadence_step || 0)}</span>
               <button
                 onClick={async () => {
-                  const newStep = Math.min(CADENCE_STEPS.length - 1, (lead.cadence_step || 0) + 1);
+                  const currentStep = lead.cadence_step || 0;
+                  const newStep = Math.min(CADENCE_STEPS.length - 1, currentStep + 1);
+                  const stepLabel = getCadenceLabel(newStep);
+                  if (!window.confirm(`Advance cadence to "${stepLabel}"? This may schedule an email to be sent.`)) return;
                   try {
                     await leadsApi.updateCadenceStep(id, newStep);
                     fetchLead();
