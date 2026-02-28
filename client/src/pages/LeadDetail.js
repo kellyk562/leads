@@ -1301,6 +1301,49 @@ function LeadDetail() {
             <div className="modal-body">
               {emailStep === 1 ? (
                 <>
+                  {(lead.cadence_step || 0) === 0 && (
+                    <div
+                      onClick={async () => {
+                        try {
+                          await leadsApi.updateCadenceStep(id, 1);
+                          toast.success('Email cadence started!');
+                          setShowEmailModal(false);
+                          fetchLead();
+                        } catch {
+                          toast.error('Failed to start cadence');
+                        }
+                      }}
+                      style={{
+                        cursor: 'pointer',
+                        background: '#f3e8ff',
+                        border: '2px solid #7c3aed',
+                        borderRadius: '8px',
+                        padding: '1rem',
+                        marginBottom: '1rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.75rem',
+                      }}
+                    >
+                      <div style={{
+                        background: '#7c3aed',
+                        color: 'white',
+                        borderRadius: '50%',
+                        width: '36px',
+                        height: '36px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}>
+                        <FaPaperPlane size={14} />
+                      </div>
+                      <div>
+                        <div style={{ fontWeight: 700, color: '#7c3aed', fontSize: '0.9375rem' }}>Start Email Cadence</div>
+                        <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>Begin the automated email sequence</div>
+                      </div>
+                    </div>
+                  )}
                   {emailTemplates.length > 0 ? (
                     <div style={{ display: 'grid', gap: '0.75rem' }}>
                       {emailTemplates.map(template => (

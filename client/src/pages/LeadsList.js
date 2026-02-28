@@ -242,6 +242,21 @@ function LeadsList() {
     }
   };
 
+  const handleBulkStartCadence = async () => {
+    const ids = [...selectedIds];
+    try {
+      const res = await leadsApi.bulkStartCadence(ids);
+      const { started, skipped } = res.data;
+      toast.success(`Cadence started for ${started} lead${started !== 1 ? 's' : ''}${skipped ? `, ${skipped} skipped` : ''}`);
+      setSelectedIds(new Set());
+      setSelectAll(false);
+      fetchLeads();
+    } catch (error) {
+      console.error('Bulk start cadence error:', error);
+      toast.error('Failed to start cadences');
+    }
+  };
+
   const openBatchCall = () => {
     const selectedLeads = leads.filter(l => selectedIds.has(l.id));
     const withPhone = selectedLeads.filter(l => l.dispensary_number || l.contact_number);
@@ -295,6 +310,7 @@ function LeadsList() {
 
   const batchLeadsWithEmail = leads.filter(l => selectedIds.has(l.id) && l.contact_email).length;
   const batchLeadsWithoutEmail = selectedIds.size - batchLeadsWithEmail;
+  const batchLeadsAtStep0 = leads.filter(l => selectedIds.has(l.id) && (!l.cadence_step || l.cadence_step === 0)).length;
   const batchLeadsWithPhone = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number)).length;
   const batchLeadsWithoutPhone = selectedIds.size - batchLeadsWithPhone;
   const batchIvrCount = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number) && l.has_ivr).length;
@@ -710,6 +726,15 @@ function LeadsList() {
             >
               <FaEnvelope /> Send Email
             </button>
+            {batchLeadsAtStep0 > 0 && (
+              <button
+                className="btn btn-sm"
+                style={{ background: 'rgba(124,58,237,0.8)', color: 'white', border: 'none' }}
+                onClick={handleBulkStartCadence}
+              >
+                <FaEnvelope /> Start Cadence ({batchLeadsAtStep0})
+              </button>
+            )}
             {vapiConfigured && (
               <button
                 className="btn btn-sm"

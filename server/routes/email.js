@@ -173,6 +173,56 @@ router.post('/batch', [
   }
 });
 
+// --- Cadence helper ---
+
+// Cadence step labels (keep in sync with leads.js & client)
+const CADENCE_LABELS = ['Not started', 'Intro sent', 'Follow-up 1', 'Follow-up 2', 'Follow-up 3', 'Break-up email'];
+
+/**
+ * Advance a lead's cadence to `toStep` and schedule the next email if a template is mapped.
+ * Forward-only: skips if lead is already at or past `toStep`.
+ * Returns { updated: boolean, scheduledEmail: object|null }
+ */
+async function advanceCadenceAndScheduleNext(leadId, toStep) {
+  const lead = await db.get('SELECT id, cadence_step FROM leads WHERE id = $1', [leadId]);
+  if (!lead) return { updated: false, scheduledEmail: null };
+
+  // Forward-only guard
+  if ((lead.cadence_step || 0) >= toStep) return { updated: false, scheduledEmail: null };
+
+  const label = CADENCE_LABELS[toStep] || `Step ${toStep}`;
+
+  await db.run('UPDATE leads SET cadence_step = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [toStep, leadId]);
+
+  // Log to contact history
+  await db.run(`
+    INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+    VALUES ($1, 'Other', $2, $3)
+  `, [leadId, `Cadence advanced to Step ${toStep}: ${label}`, `Cadence: ${label}`]);
+
+  // Check for duplicate pending scheduled email
+  let scheduledEmail = null;
+  const existing = await db.get(
+    `SELECT 1 FROM scheduled_emails WHERE lead_id = $1 AND cadence_step = $2 AND status = 'pending'`,
+    [leadId, toStep]
+  );
+
+  if (!existing) {
+    const template = await db.get('SELECT * FROM email_templates WHERE cadence_step = $1 LIMIT 1', [toStep]);
+    if (template) {
+      const delayDays = template.delay_days || 0;
+      const result = await db.run(`
+        INSERT INTO scheduled_emails (lead_id, template_id, cadence_step, scheduled_for)
+        VALUES ($1, $2, $3, NOW() + ($4 || ' days')::INTERVAL)
+        RETURNING id
+      `, [leadId, template.id, toStep, delayDays]);
+      scheduledEmail = await db.get('SELECT * FROM scheduled_emails WHERE id = $1', [result.lastInsertRowid]);
+    }
+  }
+
+  return { updated: true, scheduledEmail };
+}
+
 // --- Scheduled Emails ---
 
 // Merge field replacer (shared with batch)
@@ -226,6 +276,14 @@ async function processScheduledEmails() {
 
       await db.run('UPDATE leads SET updated_at = CURRENT_TIMESTAMP WHERE id = $1', [se.lead_id]);
       processed++;
+
+      // Auto-advance cadence to next step (cascade: sending step N → schedule step N+1)
+      const nextStep = (se.cadence_step || 0) + 1;
+      if (nextStep <= 5) {
+        await advanceCadenceAndScheduleNext(se.lead_id, nextStep).catch(err =>
+          console.error(`advanceCadence error for lead ${se.lead_id}:`, err)
+        );
+      }
     } catch (err) {
       await db.run(`UPDATE scheduled_emails SET status = 'failed', error = $1 WHERE id = $2`,
         [err.message, se.id]);
@@ -276,3 +334,4 @@ router.delete('/scheduled/:id', async (req, res) => {
 
 module.exports = router;
 module.exports.processScheduledEmails = processScheduledEmails;
+module.exports.advanceCadenceAndScheduleNext = advanceCadenceAndScheduleNext;

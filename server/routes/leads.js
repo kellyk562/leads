@@ -2,7 +2,7 @@ const express = require('express');
 const { body, validationResult, param, query } = require('express-validator');
 const db = require('../database/init');
 
-const { processScheduledEmails } = require('./email');
+const { processScheduledEmails, advanceCadenceAndScheduleNext } = require('./email');
 
 const router = express.Router();
 
@@ -813,6 +813,35 @@ router.patch('/bulk/stage', async (req, res) => {
   }
 });
 
+// Bulk start cadence — advance step-0 leads to step 1
+router.patch('/bulk/cadence-start', async (req, res) => {
+  try {
+    const { ids } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids array is required' });
+    }
+
+    // Filter to leads at step 0 only
+    const eligible = await db.all(
+      `SELECT id FROM leads WHERE id = ANY($1::int[]) AND (cadence_step IS NULL OR cadence_step = 0)`,
+      [ids]
+    );
+
+    let started = 0;
+    for (const lead of eligible) {
+      const result = await advanceCadenceAndScheduleNext(lead.id, 1);
+      if (result.updated) started++;
+    }
+
+    const skipped = ids.length - started;
+    res.json({ started, skipped });
+  } catch (error) {
+    console.error('Error bulk starting cadence:', error);
+    res.status(500).json({ error: 'Failed to start cadences' });
+  }
+});
+
 // Approve pending intro email — send it and clear the pending field
 router.post('/:id/approve-intro-email', param('id').isInt(), async (req, res) => {
   try {
@@ -845,6 +874,11 @@ router.post('/:id/approve-intro-email', param('id').isInt(), async (req, res) =>
     await db.run(
       `UPDATE leads SET pending_intro_email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [req.params.id]
+    );
+
+    // Start the cadence sequence — advance to step 1
+    await advanceCadenceAndScheduleNext(parseInt(req.params.id), 1).catch(err =>
+      console.error(`advanceCadence error for lead ${req.params.id}:`, err)
     );
 
     const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);

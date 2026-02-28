@@ -63,6 +63,9 @@ export const leadsApi = {
   // Update cadence step
   updateCadenceStep: (id, step) => api.patch(`/leads/${id}/cadence-step`, { step }),
 
+  // Bulk start cadence for step-0 leads
+  bulkStartCadence: (ids) => api.patch('/leads/bulk/cadence-start', { ids }),
+
   // Get daily briefing data
   getBriefing: (range = 'week') => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
