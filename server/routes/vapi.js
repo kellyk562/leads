@@ -743,7 +743,7 @@ router.post('/call-status', async (req, res) => {
     // Merge analysis into metadata for storage
     const callMetadata = {
       ...metadata,
-      ...(Object.keys(analysis).length > 0 ? { analysis: { sentiment, successEval, appointmentBooked } } : {}),
+      ...(Object.keys(analysisRaw).length > 0 ? { analysis: { sentiment, successEval, appointmentBooked } } : {}),
     };
 
     // Update call_logs
