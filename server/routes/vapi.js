@@ -843,4 +843,153 @@ router.post('/call-status', async (req, res) => {
   }
 });
 
+// POST /api/vapi/backfill — retroactively fetch Vapi call data and update DB
+router.post('/backfill', async (req, res) => {
+  try {
+    const apiKey = process.env.VAPI_API_KEY;
+    if (!apiKey) return res.status(503).json({ error: 'VAPI_API_KEY not configured' });
+
+    // Fetch all calls from Vapi (paginate if needed)
+    const vapiCalls = [];
+    let page = 1;
+    while (true) {
+      const resp = await fetch(`https://api.vapi.ai/call?limit=100&page=${page}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}` },
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return res.status(502).json({ error: `Vapi API error: ${errText}` });
+      }
+      const data = await resp.json();
+      const items = Array.isArray(data) ? data : (data.results || []);
+      if (items.length === 0) break;
+      vapiCalls.push(...items);
+      if (items.length < 100) break;
+      page++;
+    }
+
+    let updated = 0;
+    let skipped = 0;
+    let noLead = 0;
+
+    for (const call of vapiCalls) {
+      const leadId = call.metadata?.lead_id;
+      if (!leadId) { noLead++; continue; }
+
+      const vapiCallId = call.id;
+      const endedReason = call.endedReason || null;
+      const duration = call.duration || null;
+      const transcript = call.transcript || null;
+      const recordingUrl = call.recordingUrl || call.artifact?.recordingUrl || null;
+      const cost = call.cost || null;
+
+      // Determine status using same logic as webhook
+      let status = endedReason === 'customer-did-not-answer' ? 'no_answer'
+        : endedReason === 'customer-busy' ? 'busy'
+        : endedReason === 'voicemail' ? 'voicemail'
+        : (endedReason === 'silence-timed-out' || endedReason === 'customer-ended-call') && duration && duration > 0 ? 'completed'
+        : endedReason?.startsWith('call.start.error') ? 'failed'
+        : duration && duration > 0 ? 'completed'
+        : 'failed';
+
+      // Override from transcript
+      if (status === 'completed' && transcript && /your call has been forwarded to voicemail|at the tone.{0,20}record your message|not available.{0,30}leave.{0,10}message|please leave a message|record.{0,10}message.{0,20}(after|at) the (tone|beep)/i.test(transcript)) {
+        status = 'voicemail';
+      }
+
+      // Extract analysis
+      const analysis = call.analysis || {};
+      const summary = analysis.summary || call.summary || null;
+      const successEval = analysis.successEvaluation || null;
+
+      // Override from summary
+      if (status === 'completed' && summary && /forwarded.{0,20}voicemail|sent to voicemail|went to voicemail|reached.{0,20}voicemail|no live person|voicemail.{0,20}no.{0,20}conversation/i.test(summary)) {
+        status = 'voicemail';
+      }
+
+      // Check if call_logs already has a finalized entry (not just 'ringing')
+      const existing = await get('SELECT id, status FROM call_logs WHERE vapi_call_id = $1', [vapiCallId]);
+      if (existing && existing.status !== 'ringing') {
+        skipped++;
+        continue;
+      }
+
+      const callMetadata = {
+        ...call.metadata,
+        ...(Object.keys(analysis).length > 0 ? { analysis: { successEval } } : {}),
+        backfilled: true,
+      };
+
+      // Upsert call_logs
+      if (existing) {
+        await run(
+          `UPDATE call_logs SET status = $1, duration = $2, ended_at = $3,
+           summary = $4, transcript = $5, recording_url = $6, cost = $7, metadata = $8
+           WHERE vapi_call_id = $9`,
+          [status, duration, call.endedAt || null, summary, transcript, recordingUrl, cost, JSON.stringify(callMetadata), vapiCallId]
+        );
+      } else {
+        await run(
+          `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, duration, started_at, ended_at, summary, transcript, recording_url, cost, metadata)
+           VALUES ($1, $2, 'outbound', $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          [leadId, vapiCallId, status, duration, call.createdAt || null, call.endedAt || null, summary, transcript, recordingUrl, cost, JSON.stringify(callMetadata)]
+        );
+      }
+
+      // Add contact_history entry (check for duplicates by looking for existing "AI Call Report" near this call's time)
+      const callTime = call.endedAt || call.createdAt;
+      if (callTime) {
+        const existingHistory = await get(
+          `SELECT id FROM contact_history WHERE lead_id = $1 AND notes LIKE 'AI Call Report%' AND contact_date BETWEEN $2::timestamp - interval '5 minutes' AND $2::timestamp + interval '5 minutes'`,
+          [leadId, callTime]
+        );
+        if (!existingHistory) {
+          const parts = [`AI Call Report - Duration: ${duration ? `${Math.round(duration)}s` : 'N/A'}`];
+          if (summary) parts.push(summary.substring(0, 500));
+          await run(
+            `INSERT INTO contact_history (lead_id, contact_method, notes, outcome, recording_url, contact_date)
+             VALUES ($1, 'Phone', $2, $3, $4, $5)`,
+            [leadId, parts.join('. '), `Call ${status}`, recordingUrl, callTime]
+          );
+        }
+      }
+
+      // Detect IVR from transcript
+      if (transcript && /press (?:one|two|three|pound|zero|\d)|phone tree|automated (?:system|attendant|menu)|main menu|dial (?:by name|extension)|para espa/i.test(transcript)) {
+        await run('UPDATE leads SET has_ivr = true WHERE id = $1 AND (has_ivr IS NULL OR has_ivr = false)', [leadId]);
+      }
+
+      updated++;
+    }
+
+    // Update each lead's call_status/call_summary with their most recent call
+    const leadIds = [...new Set(vapiCalls.filter(c => c.metadata?.lead_id).map(c => c.metadata.lead_id))];
+    let leadsUpdated = 0;
+    for (const lid of leadIds) {
+      const latest = await get(
+        `SELECT status, duration, summary FROM call_logs WHERE lead_id = $1 ORDER BY COALESCE(ended_at, started_at) DESC LIMIT 1`,
+        [lid]
+      );
+      if (latest) {
+        await run(
+          `UPDATE leads SET call_status = $1, call_duration = $2, call_summary = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4`,
+          [latest.status, latest.duration, latest.summary, lid]
+        );
+        leadsUpdated++;
+      }
+    }
+
+    res.json({
+      totalVapiCalls: vapiCalls.length,
+      updated,
+      skipped,
+      noLeadId: noLead,
+      leadsUpdated,
+    });
+  } catch (error) {
+    console.error('Vapi backfill error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 module.exports = router;

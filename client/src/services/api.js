@@ -139,6 +139,9 @@ export const callsApi = {
   getSchedules: () => api.get('/calls/schedules'),
   createSchedule: (data) => api.post('/calls/schedules', data),
   cancelSchedule: (id) => api.delete(`/calls/schedules/${id}`),
+
+  // Backfill call data from Vapi
+  backfill: () => api.post('/vapi/backfill'),
 };
 
 // Email API (Gmail SMTP)
