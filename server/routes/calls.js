@@ -315,7 +315,11 @@ router.patch('/demos/:id', async (req, res) => {
 router.get('/schedules', async (req, res) => {
   try {
     const schedules = await all(`
-      SELECT scb.*, cl.name AS list_name
+      SELECT scb.*, cl.name AS list_name,
+        (SELECT json_agg(json_build_object('id', l.id, 'dispensary_name', l.dispensary_name) ORDER BY l.dispensary_name)
+         FROM leads l
+         WHERE l.id IN (SELECT (jsonb_array_elements_text(scb.lead_ids))::int)
+        ) AS leads_info
       FROM scheduled_call_batches scb
       LEFT JOIN call_lists cl ON cl.id = scb.call_list_id
       ORDER BY scb.scheduled_for DESC

@@ -626,14 +626,22 @@ function Dashboard() {
           <h2><FaRobot /> Scheduled AI Calls ({scheduledCalls.length})</h2>
           <div className="callback-list">
             {scheduledCalls.map((sc) => {
-              const leadCount = Array.isArray(sc.lead_ids)
-                ? sc.lead_ids.length
-                : (typeof sc.lead_ids === 'string' ? JSON.parse(sc.lead_ids).length : 0);
+              const leads = sc.leads_info || [];
               return (
                 <div key={sc.id} className="callback-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div style={{ flex: 1 }}>
-                    <h4 style={{ margin: 0 }}>
-                      {sc.list_name || `${leadCount} lead${leadCount !== 1 ? 's' : ''}`}
+                    <h4 style={{ margin: 0, display: 'flex', flexWrap: 'wrap', gap: '0.25rem', alignItems: 'center' }}>
+                      {sc.list_name && <span style={{ marginRight: '0.25rem' }}>{sc.list_name} —</span>}
+                      {leads.length > 0 ? leads.map((l, i) => (
+                        <span key={l.id}>
+                          <Link to={`/leads/${l.id}`} style={{ color: '#2d5a27', textDecoration: 'none', fontWeight: 600 }}>
+                            {l.dispensary_name}
+                          </Link>
+                          {i < leads.length - 1 && <span style={{ color: '#6c757d' }}>, </span>}
+                        </span>
+                      )) : (
+                        <span style={{ color: '#6c757d' }}>No leads</span>
+                      )}
                     </h4>
                     <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: '#6c757d' }}>
                       {sc.scheduled_for ? format(new Date(sc.scheduled_for), 'MMM d, h:mm a') : 'Pending'}
@@ -663,7 +671,11 @@ function Dashboard() {
             {scheduledEmails.map((se) => (
               <div key={se.id} className="callback-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div style={{ flex: 1 }}>
-                  <h4 style={{ margin: 0 }}>{se.dispensary_name || `Lead #${se.lead_id}`}</h4>
+                  <h4 style={{ margin: 0 }}>
+                    <Link to={`/leads/${se.lead_id}`} style={{ color: '#2d5a27', textDecoration: 'none' }}>
+                      {se.dispensary_name || `Lead #${se.lead_id}`}
+                    </Link>
+                  </h4>
                   <p style={{ margin: '0.25rem 0 0', fontSize: '0.8125rem', color: '#6c757d' }}>
                     {se.template_name || 'Template'} — {se.scheduled_for ? format(new Date(se.scheduled_for), 'MMM d, h:mm a') : 'Pending'}
                   </p>
