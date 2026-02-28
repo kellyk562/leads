@@ -674,6 +674,13 @@ router.post('/call-status', async (req, res) => {
     const metadata = message.call?.metadata || {};
     const leadId = metadata.lead_id;
 
+    // Debug: log key webhook fields to diagnose voicemail detection
+    console.log(`[call-status] lead=${leadId} endedReason=${message.endedReason || message.call?.endedReason} duration=${message.durationSeconds || message.call?.duration}`);
+    console.log(`[call-status] transcript keys: message.transcript=${!!message.transcript}, artifact.transcript=${!!message.artifact?.transcript}, artifact.messages=${!!message.artifact?.messages}, messages=${!!message.messages}`);
+    console.log(`[call-status] analysis type=${typeof message.analysis}, isArray=${Array.isArray(message.analysis)}, keys=${message.analysis ? Object.keys(message.analysis).join(',') : 'null'}`);
+    if (message.analysis) console.log(`[call-status] analysis raw:`, JSON.stringify(message.analysis).substring(0, 500));
+    console.log(`[call-status] summary=${message.summary ? message.summary.substring(0, 200) : 'null'}`);
+
     const duration = message.durationSeconds || message.call?.duration || null;
     // Build transcript from all possible Vapi sources
     let transcript = null;
@@ -702,13 +709,18 @@ router.post('/call-status', async (req, res) => {
     }
 
     // Extract structured analysis data from Vapi
-    const analysis = message.analysis || {};
+    // Vapi sends analysis as either an object with indexed keys or an array
+    const analysisRaw = message.analysis || message.artifact?.analysis || {};
+    const analysisItems = Array.isArray(analysisRaw)
+      ? analysisRaw
+      : Object.values(analysisRaw);
     let analysisSummary = null;
     let sentiment = null;
     let successEval = null;
     let appointmentBooked = null;
 
-    for (const [, value] of Object.entries(analysis)) {
+    for (const value of analysisItems) {
+      if (!value || typeof value !== 'object') continue;
       if (value.name === 'Call Summary') analysisSummary = value.result;
       else if (value.name === 'Customer Sentiment') sentiment = value.result;
       else if (value.name === 'Success Evaluation - Descriptive') successEval = value.result;
@@ -716,7 +728,8 @@ router.post('/call-status', async (req, res) => {
     }
 
     // Prefer analysis summary over generic summary
-    const summary = analysisSummary || message.summary || null;
+    const summary = analysisSummary || message.summary || message.artifact?.summary || null;
+    console.log(`[call-status] resolved summary=${summary ? summary.substring(0, 200) : 'null'}, analysisSummary=${analysisSummary ? 'yes' : 'no'}`);
 
     // Override status to voicemail if Call Summary indicates voicemail
     // (most reliable detection — Vapi's AI analysis correctly identifies voicemail even when
@@ -724,6 +737,8 @@ router.post('/call-status', async (req, res) => {
     if (status === 'completed' && summary && /forwarded.{0,20}voicemail|sent to voicemail|went to voicemail|reached.{0,20}voicemail|no live person|voicemail.{0,20}no.{0,20}conversation/i.test(summary)) {
       status = 'voicemail';
     }
+
+    console.log(`[call-status] FINAL status=${status} for lead=${leadId}`);
 
     // Merge analysis into metadata for storage
     const callMetadata = {
