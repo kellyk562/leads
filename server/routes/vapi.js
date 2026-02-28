@@ -679,11 +679,17 @@ router.post('/call-status', async (req, res) => {
     const recordingUrl = message.recordingUrl || message.artifact?.recordingUrl || null;
     const cost = message.cost || null;
     const endedReason = message.endedReason || message.call?.endedReason || null;
-    const status = endedReason === 'customer-did-not-answer' ? 'no_answer'
+    let status = endedReason === 'customer-did-not-answer' ? 'no_answer'
       : endedReason === 'customer-busy' ? 'busy'
       : endedReason === 'voicemail' ? 'voicemail'
       : duration && duration > 0 ? 'completed'
       : 'failed';
+
+    // Override status to voicemail if transcript indicates call was forwarded to voicemail
+    // (Vapi often reports these as normal completed calls since the line connected)
+    if (status === 'completed' && transcript && /your call has been forwarded to voicemail|at the tone.{0,20}record your message|not available.{0,30}leave.{0,10}message|please leave a message|record.{0,10}message.{0,20}(after|at) the (tone|beep)/i.test(transcript)) {
+      status = 'voicemail';
+    }
 
     // Extract structured analysis data from Vapi
     const analysis = message.analysis || {};
