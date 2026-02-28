@@ -877,7 +877,9 @@ router.post('/backfill', async (req, res) => {
     let skipped = 0;
     let noLead = 0;
 
+    const errors = [];
     for (const call of vapiCalls) {
+      try {
       const leadId = call.metadata?.lead_id;
       if (!leadId) { noLead++; continue; }
 
@@ -969,6 +971,9 @@ router.post('/backfill', async (req, res) => {
       }
 
       updated++;
+      } catch (callErr) {
+        errors.push({ callId: call.id, leadId: call.metadata?.lead_id, error: callErr.message });
+      }
     }
 
     // Update each lead's call_status/call_summary with their most recent call
@@ -994,6 +999,7 @@ router.post('/backfill', async (req, res) => {
       skipped,
       noLeadId: noLead,
       leadsUpdated,
+      errors: errors.length > 0 ? errors : undefined,
     });
   } catch (error) {
     console.error('Vapi backfill error:', error);
