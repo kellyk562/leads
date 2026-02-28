@@ -881,6 +881,10 @@ router.post('/backfill', async (req, res) => {
       const leadId = call.metadata?.lead_id;
       if (!leadId) { noLead++; continue; }
 
+      // Verify lead exists in DB
+      const leadExists = await get('SELECT id FROM leads WHERE id = $1', [leadId]);
+      if (!leadExists) { noLead++; continue; }
+
       const vapiCallId = call.id;
       const endedReason = call.endedReason || null;
       const duration = call.duration || null;
