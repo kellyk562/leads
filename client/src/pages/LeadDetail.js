@@ -73,6 +73,7 @@ function LeadDetail() {
   const [scheduleCallForm, setScheduleCallForm] = useState({ scheduledFor: '', delaySeconds: 30 });
   const [approvingEmail, setApprovingEmail] = useState(false);
   const [dismissingEmail, setDismissingEmail] = useState(false);
+  const [scheduledCall, setScheduledCall] = useState(null);
 
   const fetchLead = useCallback(async () => {
     try {
@@ -101,7 +102,13 @@ function LeadDetail() {
     fetchTasks();
     emailApi.getStatus().then(res => setEmailConfigured(res.data.configured)).catch(() => setEmailConfigured(false));
     callsApi.getStatus().then(res => setVapiConfigured(res.data.configured)).catch(() => setVapiConfigured(false));
-  }, [fetchLead, fetchTasks]);
+    callsApi.getSchedules().then(res => {
+      const pending = (res.data || []).find(s =>
+        s.status === 'pending' && Array.isArray(s.lead_ids) && s.lead_ids.includes(parseInt(id))
+      );
+      setScheduledCall(pending || null);
+    }).catch(() => setScheduledCall(null));
+  }, [fetchLead, fetchTasks, id]);
 
   const handleDelete = async () => {
     try {
@@ -693,21 +700,33 @@ function LeadDetail() {
             </button>
             {vapiConfigured && (lead.dispensary_number || lead.contact_number) && (
               <div style={{ position: 'relative', flex: '1 1 auto', display: 'flex' }}>
-                <button
-                  className="btn"
-                  onClick={handleAiCall}
-                  disabled={callingLead}
-                  style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px 0 0 6px' }}
-                >
-                  <FaRobot /> {callingLead ? 'Calling...' : 'AI Call'}
-                </button>
-                <button
-                  className="btn"
-                  onClick={() => setShowAiCallMenu(!showAiCallMenu)}
-                  style={{ background: '#6d28d9', color: 'white', border: 'none', borderRadius: '0 6px 6px 0', padding: '0.5rem', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
-                >
-                  ▼
-                </button>
+                {scheduledCall ? (
+                  <button
+                    className="btn"
+                    onClick={() => setShowAiCallMenu(!showAiCallMenu)}
+                    style={{ flex: 1, background: '#4c1d95', color: 'white', border: 'none', borderRadius: '6px', fontSize: '0.8125rem' }}
+                  >
+                    <FaCalendarAlt style={{ marginRight: '0.25rem' }} /> Call Scheduled — {format(parseISO(scheduledCall.scheduled_for), 'MMM d, h:mm a')}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      className="btn"
+                      onClick={handleAiCall}
+                      disabled={callingLead}
+                      style={{ flex: 1, background: '#7c3aed', color: 'white', border: 'none', borderRadius: '6px 0 0 6px' }}
+                    >
+                      <FaRobot /> {callingLead ? 'Calling...' : 'AI Call'}
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={() => setShowAiCallMenu(!showAiCallMenu)}
+                      style={{ background: '#6d28d9', color: 'white', border: 'none', borderRadius: '0 6px 6px 0', padding: '0.5rem', borderLeft: '1px solid rgba(255,255,255,0.2)' }}
+                    >
+                      ▼
+                    </button>
+                  </>
+                )}
                 {showAiCallMenu && (
                   <div style={{
                     position: 'absolute', top: '100%', right: 0, marginTop: '0.25rem',
