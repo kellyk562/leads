@@ -727,13 +727,27 @@ router.post('/call-status', async (req, res) => {
       }
     }
 
+    // Detect IVR/voicemail systems from transcript content
+    const ivrFromTranscript = transcript && /press (?:one|two|three|pound|zero|\d)|at the tone|leave (?:a |your )?message|phone tree|automated (?:system|attendant|menu)|main menu|dial (?:by name|extension)|para espa/i.test(transcript);
+
     // Update lead record
     if (leadId) {
+      const leadUpdates = [
+        'call_status = $1', 'call_duration = $2', 'call_summary = $3',
+        'last_called_at = CURRENT_TIMESTAMP', 'updated_at = CURRENT_TIMESTAMP'
+      ];
+      const leadParams = [status, duration, summary];
+      let leadParamIdx = 4;
+
+      if (ivrFromTranscript) {
+        leadUpdates.push(`has_ivr = $${leadParamIdx++}`);
+        leadParams.push(true);
+      }
+
+      leadParams.push(leadId);
       await run(
-        `UPDATE leads SET call_status = $1, call_duration = $2, call_summary = $3,
-         last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-         WHERE id = $4`,
-        [status, duration, summary, leadId]
+        `UPDATE leads SET ${leadUpdates.join(', ')} WHERE id = $${leadParamIdx}`,
+        leadParams
       );
 
       // Log to contact_history with rich analysis data
