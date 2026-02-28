@@ -849,11 +849,14 @@ router.post('/backfill', async (req, res) => {
     const apiKey = process.env.VAPI_API_KEY;
     if (!apiKey) return res.status(503).json({ error: 'VAPI_API_KEY not configured' });
 
-    // Fetch all calls from Vapi (paginate if needed)
+    // Fetch all calls from Vapi (cursor-based using createdAtLt)
     const vapiCalls = [];
-    let page = 1;
+    let cursor = null;
     while (true) {
-      const resp = await fetch(`https://api.vapi.ai/call?limit=100&page=${page}`, {
+      const url = cursor
+        ? `https://api.vapi.ai/call?limit=100&createdAtLt=${encodeURIComponent(cursor)}`
+        : `https://api.vapi.ai/call?limit=100`;
+      const resp = await fetch(url, {
         headers: { 'Authorization': `Bearer ${apiKey}` },
       });
       if (!resp.ok) {
@@ -865,7 +868,9 @@ router.post('/backfill', async (req, res) => {
       if (items.length === 0) break;
       vapiCalls.push(...items);
       if (items.length < 100) break;
-      page++;
+      // Use the oldest call's createdAt as cursor for next page
+      const oldest = items.reduce((min, c) => c.createdAt < min ? c.createdAt : min, items[0].createdAt);
+      cursor = oldest;
     }
 
     let updated = 0;
