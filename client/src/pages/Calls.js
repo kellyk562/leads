@@ -224,6 +224,7 @@ function CallListsTab() {
       const parts = [`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})`];
       if (res.data.skipped > 0) parts.push(`${res.data.skipped} skipped (no phone)`);
       if (res.data.ivrSkipped > 0) parts.push(`${res.data.ivrSkipped} skipped (IVR)`);
+      if (res.data.cooldownSkipped > 0) parts.push(`${res.data.cooldownSkipped} skipped (48h cooldown)`);
       toast.success(parts.join(', '));
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to start batch call');
@@ -895,6 +896,7 @@ function SchedulesTab() {
               <th style={styles.th}>List</th>
               <th style={styles.th}>Leads</th>
               <th style={styles.th}>Scheduled For</th>
+              <th style={styles.th}>Source</th>
               <th style={styles.th}>Delay</th>
               <th style={styles.th}>Status</th>
               <th style={styles.th}>Actions</th>
@@ -908,6 +910,25 @@ function SchedulesTab() {
                   <td style={styles.td}>{s.list_name || '—'}</td>
                   <td style={styles.td}>{leadCount}</td>
                   <td style={styles.td}>{formatDateTime(s.scheduled_for)}</td>
+                  <td style={styles.td}>
+                    {(() => {
+                      const src = s.source || 'manual';
+                      const sourceConfig = {
+                        voicemail_retry: { label: 'Auto-retry', bg: '#e2d9f3', color: '#6f42c1' },
+                        callback: { label: 'Callback', bg: '#fff3e0', color: '#e65100' },
+                        manual: { label: 'Manual', bg: '#e9ecef', color: '#6c757d' },
+                      };
+                      const cfg = sourceConfig[src] || sourceConfig.manual;
+                      return (
+                        <span style={{
+                          display: 'inline-block', padding: '0.15rem 0.5rem', borderRadius: '999px',
+                          fontSize: '0.75rem', fontWeight: 600, backgroundColor: cfg.bg, color: cfg.color,
+                        }}>
+                          {cfg.label}
+                        </span>
+                      );
+                    })()}
+                  </td>
                   <td style={styles.td}>{s.delay_seconds}s</td>
                   <td style={styles.td}><StatusBadge status={s.status} colorMap={SCHEDULE_STATUS_COLORS} /></td>
                   <td style={styles.td}>

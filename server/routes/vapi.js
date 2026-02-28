@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { get, run, pool } = require('../database/init');
+const { get, run, all, pool } = require('../database/init');
 const emailService = require('../services/emailService');
 const zoomService = require('../services/zoomService');
 
@@ -56,6 +56,26 @@ function pacificDate(year, month, day, hour, min) {
   const isPDT = formatted.includes('PDT');
   const offsetHours = isPDT ? 7 : 8;
   return new Date(`${tempStr}+00:00`).getTime() + offsetHours * 3600000;
+}
+
+// Calculate retry time for voicemail/no-answer calls
+// Before 4 PM PT → retry in 4 hours
+// After 4 PM PT → next business day at 10 AM PT (skip weekends)
+function calculateRetryTime() {
+  const nowPT = pacificNow();
+  if (nowPT.getHours() < 16) {
+    // Before 4 PM PT — retry in 4 hours
+    return new Date(Date.now() + 4 * 60 * 60 * 1000);
+  }
+  // After 4 PM PT — next business day at 10 AM PT
+  const next = new Date(nowPT);
+  next.setDate(next.getDate() + 1);
+  // Skip Saturday (6) and Sunday (0)
+  while (next.getDay() === 0 || next.getDay() === 6) {
+    next.setDate(next.getDate() + 1);
+  }
+  const ts = pacificDate(next.getFullYear(), next.getMonth(), next.getDate(), 10, 0);
+  return new Date(ts);
 }
 
 // Parse natural-language callback time into a Date (Pacific-aware, defaults to 10 AM PT)
@@ -462,8 +482,8 @@ async function handleSaveCallback({ leadId, vapiCallId, args, toolCall, results,
           const scheduledFor = parseCallbackTime(timeInput);
           if (scheduledFor && scheduledFor > new Date()) {
             await pool.query(
-              `INSERT INTO scheduled_call_batches (lead_ids, scheduled_for, delay_seconds, status)
-               VALUES ($1, $2, 30, 'pending')`,
+              `INSERT INTO scheduled_call_batches (lead_ids, scheduled_for, delay_seconds, status, source)
+               VALUES ($1, $2, 30, 'pending', 'callback')`,
               [JSON.stringify([leadId]), scheduledFor]
             );
             console.log(`Auto-scheduled follow-up call for lead ${leadId} at ${scheduledFor.toISOString()} (from: ${timeInput})`);
@@ -716,6 +736,35 @@ router.post('/call-status', async (req, res) => {
          VALUES ($1, 'Phone', $2, $3, $4)`,
         [leadId, parts.join('. '), `Call ${status}`, recordingUrl]
       );
+
+      // Auto-retry for voicemail/no_answer (max 2 retries)
+      if (status === 'voicemail' || status === 'no_answer') {
+        deferAsync('voicemail_retry:schedule', async () => {
+          const lead = await get('SELECT voicemail_retry_count FROM leads WHERE id = $1', [leadId]);
+          const retryCount = lead?.voicemail_retry_count || 0;
+          if (retryCount >= 2) {
+            console.log(`Voicemail retry skipped for lead ${leadId}: already retried ${retryCount} times (max 2)`);
+            return;
+          }
+          // Increment retry counter
+          await run('UPDATE leads SET voicemail_retry_count = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [retryCount + 1, leadId]);
+          // Schedule retry
+          const retryAt = calculateRetryTime();
+          await pool.query(
+            `INSERT INTO scheduled_call_batches (lead_ids, scheduled_for, delay_seconds, status, source)
+             VALUES ($1, $2, 30, 'pending', 'voicemail_retry')`,
+            [JSON.stringify([leadId]), retryAt]
+          );
+          console.log(`Auto-retry #${retryCount + 1} scheduled for lead ${leadId} at ${retryAt.toISOString()} (${status})`);
+        });
+      }
+
+      // Reset voicemail retry counter on successful call
+      if (status === 'completed') {
+        deferAsync('voicemail_retry:reset', async () => {
+          await run('UPDATE leads SET voicemail_retry_count = 0, updated_at = CURRENT_TIMESTAMP WHERE id = $1', [leadId]);
+        });
+      }
     }
 
     return res.status(200).json({ ok: true });

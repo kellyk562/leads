@@ -24,6 +24,9 @@ function formatE164(phone) {
   return `+${digits}`;
 }
 
+// 48-hour cooldown between calls
+const COOLDOWN_MS = 48 * 60 * 60 * 1000;
+
 // Build dynamic firstMessage and variableValues for Vapi assistantOverrides
 function buildAssistantOverrides(lead) {
   const ownerName = (lead.manager_name || '').trim();
@@ -440,11 +443,16 @@ router.post('/outbound', async (req, res) => {
       [leadId, `AI outbound call initiated to ${phoneNumber}`, 'Call Initiated']
     );
 
+    // Check cooldown for informational warning (does not block)
+    const cooldownWarning = lead.last_called_at && (Date.now() - new Date(lead.last_called_at).getTime()) < COOLDOWN_MS;
+
     res.json({
       success: true,
       vapiCallId,
       phoneNumber,
       leadId,
+      cooldownWarning,
+      lastCalledAt: lead.last_called_at || null,
     });
   } catch (error) {
     console.error('Outbound call error:', error);
@@ -470,13 +478,19 @@ router.post('/batch', async (req, res) => {
 
     // Validate leads have phone numbers and optionally skip IVR
     const leads = await all(
-      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr FROM leads WHERE id = ANY($1)`,
+      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr, last_called_at FROM leads WHERE id = ANY($1)`,
       [leadIds]
     );
 
     const leadsWithPhone = leads.filter(l => l.dispensary_number || l.contact_number);
-    const ivrSkipped = skipIvr ? leadsWithPhone.filter(l => l.has_ivr).length : 0;
-    const validLeads = skipIvr ? leadsWithPhone.filter(l => !l.has_ivr) : leadsWithPhone;
+
+    // Filter out leads called within 48-hour cooldown
+    const now = Date.now();
+    const cooldownFiltered = leadsWithPhone.filter(l => !l.last_called_at || (now - new Date(l.last_called_at).getTime()) >= COOLDOWN_MS);
+    const cooldownSkipped = leadsWithPhone.length - cooldownFiltered.length;
+
+    const ivrSkipped = skipIvr ? cooldownFiltered.filter(l => l.has_ivr).length : 0;
+    const validLeads = skipIvr ? cooldownFiltered.filter(l => !l.has_ivr) : cooldownFiltered;
     const skippedCount = leadIds.length - leadsWithPhone.length;
 
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -551,6 +565,7 @@ router.post('/batch', async (req, res) => {
       total: validLeads.length,
       skipped: skippedCount,
       ivrSkipped,
+      cooldownSkipped,
       estimatedDuration: `${Math.round(validLeads.length * delaySeconds / 60)} minutes`,
     });
   } catch (error) {
@@ -575,7 +590,7 @@ function startScheduleExecutor() {
     try {
       // Find due scheduled batches
       const dueBatches = await all(
-        "SELECT * FROM scheduled_call_batches WHERE status = 'pending' AND scheduled_for <= NOW()"
+        "SELECT *, COALESCE(source, 'manual') AS source FROM scheduled_call_batches WHERE status = 'pending' AND scheduled_for <= NOW()"
       );
 
       for (const batch of dueBatches) {
@@ -595,12 +610,16 @@ function startScheduleExecutor() {
 
         // Trigger batch call logic
         const leads = await all(
-          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr FROM leads WHERE id = ANY($1)',
+          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr, last_called_at FROM leads WHERE id = ANY($1)',
           [leadIds]
         );
 
         const leadsWithPhone = leads.filter(l => l.dispensary_number || l.contact_number);
-        const validLeads = leadsWithPhone.filter(l => !l.has_ivr);
+
+        // Voicemail retry batches bypass cooldown since they're intentionally within the 48h window
+        const bypassCooldown = batch.source === 'voicemail_retry';
+        const afterCooldown = bypassCooldown ? leadsWithPhone : leadsWithPhone.filter(l => !l.last_called_at || (Date.now() - new Date(l.last_called_at).getTime()) >= COOLDOWN_MS);
+        const validLeads = afterCooldown.filter(l => !l.has_ivr);
         const results = [];
 
         for (let i = 0; i < validLeads.length; i++) {

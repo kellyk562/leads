@@ -295,6 +295,19 @@ async function initDatabase() {
       `);
     }
 
+    // Add voicemail_retry_count column to leads (for auto-retry frequency cap)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'voicemail_retry_count'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN voicemail_retry_count INTEGER DEFAULT 0;
+        END IF;
+      END $$;
+    `);
+
     // Create call_logs table
     await client.query(`
       CREATE TABLE IF NOT EXISTS call_logs (
@@ -392,6 +405,19 @@ async function initDatabase() {
         results JSONB,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
+    `);
+
+    // Add source column to scheduled_call_batches (manual / callback / voicemail_retry)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'scheduled_call_batches' AND column_name = 'source'
+        ) THEN
+          ALTER TABLE scheduled_call_batches ADD COLUMN source TEXT DEFAULT 'manual';
+        END IF;
+      END $$;
     `);
 
     await client.query(`CREATE INDEX IF NOT EXISTS idx_call_list_items_list_id ON call_list_items(call_list_id)`);

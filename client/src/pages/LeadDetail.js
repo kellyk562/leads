@@ -306,7 +306,14 @@ function LeadDetail() {
       toast.error('This lead has no phone number on file');
       return;
     }
-    if (!window.confirm(`Start AI call to ${lead.dispensary_name}?`)) return;
+    // Check 48-hour cooldown and warn (but don't block)
+    const inCooldown = lead.last_called_at && (Date.now() - new Date(lead.last_called_at).getTime()) < 48 * 60 * 60 * 1000;
+    if (inCooldown) {
+      const hoursAgo = Math.round((Date.now() - new Date(lead.last_called_at).getTime()) / (60 * 60 * 1000));
+      if (!window.confirm(`This lead was called ${hoursAgo} hour${hoursAgo !== 1 ? 's' : ''} ago (within 48-hour cooldown). Call anyway?`)) return;
+    } else {
+      if (!window.confirm(`Start AI call to ${lead.dispensary_name}?`)) return;
+    }
     setCallingLead(true);
     try {
       await callsApi.initiateCall(lead.id);

@@ -19,7 +19,8 @@ import {
   FaTimes,
   FaExclamationTriangle,
   FaCopy,
-  FaRobot
+  FaRobot,
+  FaClock
 } from 'react-icons/fa';
 import { leadsApi, emailApi, emailTemplatesApi, callsApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
@@ -265,6 +266,7 @@ function LeadsList() {
         const parts = [`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})`];
         if (res.data.skipped > 0) parts.push(`${res.data.skipped} skipped (no phone)`);
         if (res.data.ivrSkipped > 0) parts.push(`${res.data.ivrSkipped} skipped (IVR)`);
+        if (res.data.cooldownSkipped > 0) parts.push(`${res.data.cooldownSkipped} skipped (48h cooldown)`);
         toast.success(parts.join(', '));
       } else {
         const scheduledFor = new Date(`${batchScheduleDate}T${batchScheduleTime}`).toISOString();
@@ -292,6 +294,7 @@ function LeadsList() {
   const batchLeadsWithPhone = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number)).length;
   const batchLeadsWithoutPhone = selectedIds.size - batchLeadsWithPhone;
   const batchIvrCount = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number) && l.has_ivr).length;
+  const batchCooldownCount = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number) && l.last_called_at && (Date.now() - new Date(l.last_called_at).getTime()) < 48 * 60 * 60 * 1000).length;
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -859,7 +862,7 @@ function LeadsList() {
             </div>
             <div className="modal-body">
               {(() => {
-                const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+                const effectiveCallable = (batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone) - batchCooldownCount;
                 return (
                   <>
                     <p style={{ marginBottom: '0.75rem' }}>
@@ -869,6 +872,13 @@ function LeadsList() {
                       <p style={{ color: '#e65100', marginBottom: '0.75rem' }}>
                         <FaExclamationTriangle style={{ marginRight: '0.25rem' }} />
                         {batchLeadsWithoutPhone} lead{batchLeadsWithoutPhone !== 1 ? 's' : ''} will be skipped (no phone number).
+                      </p>
+                    )}
+
+                    {batchCooldownCount > 0 && (
+                      <p style={{ color: '#0d6efd', marginBottom: '0.75rem' }}>
+                        <FaClock style={{ marginRight: '0.25rem' }} />
+                        {batchCooldownCount} lead{batchCooldownCount !== 1 ? 's' : ''} will be skipped (called within 48 hours).
                       </p>
                     )}
 
@@ -959,7 +969,7 @@ function LeadsList() {
                   <option value={120}>2 min</option>
                 </select>
                 {(() => {
-                  const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+                  const effectiveCallable = (batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone) - batchCooldownCount;
                   return (
                     <p style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.25rem' }}>
                       Estimated duration: ~{Math.max(1, Math.round(effectiveCallable * batchDelay / 60))} min
@@ -969,7 +979,7 @@ function LeadsList() {
               </div>
             </div>
             {(() => {
-              const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+              const effectiveCallable = (batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone) - batchCooldownCount;
               return (
                 <div className="modal-footer">
                   <button className="btn btn-outline" onClick={() => setBatchCallOpen(false)}>Cancel</button>
