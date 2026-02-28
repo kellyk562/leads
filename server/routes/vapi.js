@@ -675,7 +675,17 @@ router.post('/call-status', async (req, res) => {
     const leadId = metadata.lead_id;
 
     const duration = message.durationSeconds || message.call?.duration || null;
-    const transcript = message.transcript ? JSON.stringify(message.transcript) : null;
+    // Build transcript from all possible Vapi sources
+    let transcript = null;
+    if (message.transcript) {
+      transcript = typeof message.transcript === 'string' ? message.transcript : JSON.stringify(message.transcript);
+    } else if (message.artifact?.transcript) {
+      transcript = typeof message.artifact.transcript === 'string' ? message.artifact.transcript : JSON.stringify(message.artifact.transcript);
+    } else if (Array.isArray(message.artifact?.messages)) {
+      transcript = message.artifact.messages.map(m => m.content || m.text || m.message || '').join(' ');
+    } else if (Array.isArray(message.messages)) {
+      transcript = message.messages.map(m => m.content || m.text || m.message || '').join(' ');
+    }
     const recordingUrl = message.recordingUrl || message.artifact?.recordingUrl || null;
     const cost = message.cost || null;
     const endedReason = message.endedReason || message.call?.endedReason || null;
