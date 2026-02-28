@@ -102,7 +102,7 @@ export const emailTemplatesApi = {
 export const callsApi = {
   getStatus: () => api.get('/calls/status'),
   initiateCall: (leadId) => api.post('/calls/outbound', { leadId }),
-  batchCall: (leadIds, delaySeconds) => api.post('/calls/batch', { leadIds, delaySeconds }),
+  batchCall: (leadIds, delaySeconds, skipIvr = true) => api.post('/calls/batch', { leadIds, delaySeconds, skipIvr }),
   getBatchStatus: (batchId) => api.get(`/calls/batch/${batchId}`),
 
   // Call Lists

@@ -57,6 +57,7 @@ function LeadsList() {
   const [batchScheduleDate, setBatchScheduleDate] = useState('');
   const [batchScheduleTime, setBatchScheduleTime] = useState('');
   const [batchDelay, setBatchDelay] = useState(30);
+  const [batchSkipIvr, setBatchSkipIvr] = useState(true);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -252,6 +253,7 @@ function LeadsList() {
     setBatchScheduleTime(now.toTimeString().slice(0, 5));
     setBatchCallMode('now');
     setBatchDelay(30);
+    setBatchSkipIvr(true);
     setBatchCallOpen(true);
   };
 
@@ -259,14 +261,18 @@ function LeadsList() {
     setBatchCalling(true);
     try {
       if (batchCallMode === 'now') {
-        const res = await callsApi.batchCall([...selectedIds], batchDelay);
-        toast.success(`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})${res.data.skipped > 0 ? `, ${res.data.skipped} skipped` : ''}`);
+        const res = await callsApi.batchCall([...selectedIds], batchDelay, batchSkipIvr);
+        const parts = [`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})`];
+        if (res.data.skipped > 0) parts.push(`${res.data.skipped} skipped (no phone)`);
+        if (res.data.ivrSkipped > 0) parts.push(`${res.data.ivrSkipped} skipped (IVR)`);
+        toast.success(parts.join(', '));
       } else {
         const scheduledFor = new Date(`${batchScheduleDate}T${batchScheduleTime}`).toISOString();
         await callsApi.createSchedule({
           leadIds: [...selectedIds],
           scheduledFor,
           delaySeconds: batchDelay,
+          skipIvr: batchSkipIvr,
         });
         toast.success(`${selectedIds.size} calls scheduled for ${batchScheduleDate} at ${batchScheduleTime}`);
       }
@@ -285,6 +291,7 @@ function LeadsList() {
   const batchLeadsWithoutEmail = selectedIds.size - batchLeadsWithEmail;
   const batchLeadsWithPhone = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number)).length;
   const batchLeadsWithoutPhone = selectedIds.size - batchLeadsWithPhone;
+  const batchIvrCount = leads.filter(l => selectedIds.has(l.id) && (l.dispensary_number || l.contact_number) && l.has_ivr).length;
 
   const formatDate = (dateString) => {
     if (!dateString) return '-';
@@ -851,15 +858,50 @@ function LeadsList() {
               <button className="modal-close" onClick={() => setBatchCallOpen(false)}>&times;</button>
             </div>
             <div className="modal-body">
-              <p style={{ marginBottom: '0.75rem' }}>
-                <strong>{batchLeadsWithPhone}</strong> lead{batchLeadsWithPhone !== 1 ? 's' : ''} will be called.
-              </p>
-              {batchLeadsWithoutPhone > 0 && (
-                <p style={{ color: '#e65100', marginBottom: '0.75rem' }}>
-                  <FaExclamationTriangle style={{ marginRight: '0.25rem' }} />
-                  {batchLeadsWithoutPhone} lead{batchLeadsWithoutPhone !== 1 ? 's' : ''} will be skipped (no phone number).
-                </p>
-              )}
+              {(() => {
+                const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+                return (
+                  <>
+                    <p style={{ marginBottom: '0.75rem' }}>
+                      <strong>{effectiveCallable}</strong> lead{effectiveCallable !== 1 ? 's' : ''} will be called.
+                    </p>
+                    {batchLeadsWithoutPhone > 0 && (
+                      <p style={{ color: '#e65100', marginBottom: '0.75rem' }}>
+                        <FaExclamationTriangle style={{ marginRight: '0.25rem' }} />
+                        {batchLeadsWithoutPhone} lead{batchLeadsWithoutPhone !== 1 ? 's' : ''} will be skipped (no phone number).
+                      </p>
+                    )}
+
+                    {/* Skip IVR checkbox */}
+                    <label style={{
+                      display: 'flex', alignItems: 'center', gap: '0.5rem',
+                      padding: '0.625rem 0.75rem', borderRadius: '8px',
+                      border: '1px solid #e9ecef', marginBottom: '0.75rem',
+                      cursor: 'pointer', background: batchSkipIvr ? '#fff3e0' : 'transparent',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={batchSkipIvr}
+                        onChange={(e) => setBatchSkipIvr(e.target.checked)}
+                        style={{ accentColor: '#e65100' }}
+                      />
+                      <div>
+                        <div style={{ fontWeight: 500, fontSize: '0.875rem' }}>Skip IVR leads</div>
+                        {batchIvrCount > 0 && batchSkipIvr && (
+                          <div style={{ fontSize: '0.75rem', color: '#e65100' }}>
+                            {batchIvrCount} lead{batchIvrCount !== 1 ? 's' : ''} with IVR systems will be skipped
+                          </div>
+                        )}
+                        {batchIvrCount === 0 && (
+                          <div style={{ fontSize: '0.75rem', color: '#6c757d' }}>
+                            No IVR leads in selection
+                          </div>
+                        )}
+                      </div>
+                    </label>
+                  </>
+                );
+              })()}
 
               {/* Call Now / Schedule toggle */}
               <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
@@ -916,24 +958,34 @@ function LeadsList() {
                   <option value={90}>90s</option>
                   <option value={120}>2 min</option>
                 </select>
-                <p style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.25rem' }}>
-                  Estimated duration: ~{Math.max(1, Math.round(batchLeadsWithPhone * batchDelay / 60))} min
-                </p>
+                {(() => {
+                  const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+                  return (
+                    <p style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.25rem' }}>
+                      Estimated duration: ~{Math.max(1, Math.round(effectiveCallable * batchDelay / 60))} min
+                    </p>
+                  );
+                })()}
               </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-outline" onClick={() => setBatchCallOpen(false)}>Cancel</button>
-              <button
-                className="btn"
-                style={{ background: '#7c3aed', color: 'white', border: 'none' }}
-                disabled={batchCalling || batchLeadsWithPhone === 0 || (batchCallMode === 'schedule' && (!batchScheduleDate || !batchScheduleTime))}
-                onClick={handleBatchCallConfirm}
-              >
-                {batchCalling ? 'Starting...' : batchCallMode === 'now'
-                  ? `Call ${batchLeadsWithPhone} Lead${batchLeadsWithPhone !== 1 ? 's' : ''} Now`
-                  : `Schedule ${batchLeadsWithPhone} Call${batchLeadsWithPhone !== 1 ? 's' : ''}`}
-              </button>
-            </div>
+            {(() => {
+              const effectiveCallable = batchSkipIvr ? batchLeadsWithPhone - batchIvrCount : batchLeadsWithPhone;
+              return (
+                <div className="modal-footer">
+                  <button className="btn btn-outline" onClick={() => setBatchCallOpen(false)}>Cancel</button>
+                  <button
+                    className="btn"
+                    style={{ background: '#7c3aed', color: 'white', border: 'none' }}
+                    disabled={batchCalling || effectiveCallable === 0 || (batchCallMode === 'schedule' && (!batchScheduleDate || !batchScheduleTime))}
+                    onClick={handleBatchCallConfirm}
+                  >
+                    {batchCalling ? 'Starting...' : batchCallMode === 'now'
+                      ? `Call ${effectiveCallable} Lead${effectiveCallable !== 1 ? 's' : ''} Now`
+                      : `Schedule ${effectiveCallable} Call${effectiveCallable !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

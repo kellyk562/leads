@@ -459,7 +459,7 @@ router.post('/batch', async (req, res) => {
       return res.status(503).json({ error: 'Vapi is not configured' });
     }
 
-    const { leadIds, delaySeconds = 30 } = req.body;
+    const { leadIds, delaySeconds = 30, skipIvr = true } = req.body;
     if (!leadIds || !Array.isArray(leadIds) || leadIds.length === 0) {
       return res.status(400).json({ error: 'leadIds array is required' });
     }
@@ -468,14 +468,16 @@ router.post('/batch', async (req, res) => {
       return res.status(400).json({ error: 'Maximum 50 leads per batch' });
     }
 
-    // Validate leads have phone numbers
+    // Validate leads have phone numbers and optionally skip IVR
     const leads = await all(
-      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage FROM leads WHERE id = ANY($1)`,
+      `SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr FROM leads WHERE id = ANY($1)`,
       [leadIds]
     );
 
-    const validLeads = leads.filter(l => l.dispensary_number || l.contact_number);
-    const skippedCount = leadIds.length - validLeads.length;
+    const leadsWithPhone = leads.filter(l => l.dispensary_number || l.contact_number);
+    const ivrSkipped = skipIvr ? leadsWithPhone.filter(l => l.has_ivr).length : 0;
+    const validLeads = skipIvr ? leadsWithPhone.filter(l => !l.has_ivr) : leadsWithPhone;
+    const skippedCount = leadIds.length - leadsWithPhone.length;
 
     const batchId = `batch_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const batchState = {
@@ -548,6 +550,7 @@ router.post('/batch', async (req, res) => {
       batchId,
       total: validLeads.length,
       skipped: skippedCount,
+      ivrSkipped,
       estimatedDuration: `${Math.round(validLeads.length * delaySeconds / 60)} minutes`,
     });
   } catch (error) {
@@ -592,11 +595,12 @@ function startScheduleExecutor() {
 
         // Trigger batch call logic
         const leads = await all(
-          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage FROM leads WHERE id = ANY($1)',
+          'SELECT id, dispensary_name, dispensary_number, contact_number, manager_name, contact_name, current_pos_system, city, stage, has_ivr FROM leads WHERE id = ANY($1)',
           [leadIds]
         );
 
-        const validLeads = leads.filter(l => l.dispensary_number || l.contact_number);
+        const leadsWithPhone = leads.filter(l => l.dispensary_number || l.contact_number);
+        const validLeads = leadsWithPhone.filter(l => !l.has_ivr);
         const results = [];
 
         for (let i = 0; i < validLeads.length; i++) {

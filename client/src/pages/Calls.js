@@ -220,8 +220,11 @@ function CallListsTab() {
     try {
       const detail = await callsApi.getList(list.id);
       const leadIds = detail.data.items.map(i => i.lead_id);
-      const res = await callsApi.batchCall(leadIds);
-      toast.success(`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})`);
+      const res = await callsApi.batchCall(leadIds, undefined, true);
+      const parts = [`Batch started: ${res.data.total} calls queued (~${res.data.estimatedDuration})`];
+      if (res.data.skipped > 0) parts.push(`${res.data.skipped} skipped (no phone)`);
+      if (res.data.ivrSkipped > 0) parts.push(`${res.data.ivrSkipped} skipped (IVR)`);
+      toast.success(parts.join(', '));
     } catch (e) {
       toast.error(e.response?.data?.error || 'Failed to start batch call');
     }
@@ -485,6 +488,7 @@ function ScheduleModal({ list, onClose, onCreated }) {
         callListId: list.id,
         scheduledFor: new Date(scheduledFor).toISOString(),
         delaySeconds,
+        skipIvr: true,
       });
       onCreated();
     } catch { toast.error('Failed to create schedule'); }
