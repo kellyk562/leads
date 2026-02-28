@@ -664,7 +664,11 @@ function buildDemoConfirmationHtml({ contact_name, dispensary_name, demo_date, d
 // POST /api/vapi/call-status — end-of-call report webhook
 router.post('/call-status', async (req, res) => {
   try {
-    const { message } = req.body;
+    // Log raw payload for debugging (top-level, before any guards)
+    console.log(`[call-status] RAW BODY keys: ${Object.keys(req.body).join(',')}, type=${req.body.type || req.body.message?.type || 'none'}`);
+
+    // Vapi may send payload wrapped in `message` or directly in body
+    const message = req.body.message || (req.body.type ? req.body : null);
 
     if (!message || message.type !== 'end-of-call-report') {
       return res.status(200).json({ ok: true });
