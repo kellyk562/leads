@@ -20,7 +20,8 @@ import {
   FaExclamationTriangle,
   FaCopy,
   FaRobot,
-  FaClock
+  FaClock,
+  FaEnvelopeOpen
 } from 'react-icons/fa';
 import { leadsApi, emailApi, emailTemplatesApi, callsApi } from '../services/api';
 import { STAGES, STAGE_COLORS, STAGE_BG_COLORS, getScoreColor, getScoreBg, getScoreLabel, getCadenceLabel } from '../constants/stages';
@@ -38,6 +39,7 @@ function LeadsList() {
   const [ivrFilter, setIvrFilter] = useState(searchParams.get('has_ivr') === 'true');
   const [callbackFilter, setCallbackFilter] = useState(searchParams.get('has_callback') === 'true');
   const [introEmailFilter, setIntroEmailFilter] = useState(searchParams.get('has_intro_email') === 'true');
+  const [pendingIntroFilter, setPendingIntroFilter] = useState(searchParams.get('has_pending_intro') === 'true');
   const [sortBy, setSortBy] = useState('updated_at');
   const [sortOrder, setSortOrder] = useState('DESC');
   const [deleteConfirm, setDeleteConfirm] = useState(null);
@@ -72,6 +74,7 @@ function LeadsList() {
       if (ivrFilter) params.has_ivr = 'true';
       if (callbackFilter) params.has_callback = 'true';
       if (introEmailFilter) params.has_intro_email = 'true';
+      if (pendingIntroFilter) params.has_pending_intro = 'true';
 
       const response = await leadsApi.getAll(params);
       setLeads(response.data);
@@ -81,7 +84,7 @@ function LeadsList() {
     } finally {
       setLoading(false);
     }
-  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, pendingIntroFilter, sortBy, sortOrder]);
 
   useEffect(() => {
     fetchLeads();
@@ -95,14 +98,15 @@ function LeadsList() {
     if (ivrFilter) params.set('has_ivr', 'true');
     if (callbackFilter) params.set('has_callback', 'true');
     if (introEmailFilter) params.set('has_intro_email', 'true');
+    if (pendingIntroFilter) params.set('has_pending_intro', 'true');
     setSearchParams(params);
-  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, setSearchParams]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, pendingIntroFilter, setSearchParams]);
 
   // Clear selection on filter change
   useEffect(() => {
     setSelectedIds(new Set());
     setSelectAll(false);
-  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, sortBy, sortOrder]);
+  }, [search, stageFilter, ivrFilter, callbackFilter, introEmailFilter, pendingIntroFilter, sortBy, sortOrder]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -440,6 +444,22 @@ function LeadsList() {
             {introEmailFilter ? 'Intro Sent' : 'Intro Email'}
           </button>
 
+          <button
+            className={`btn btn-sm ${pendingIntroFilter ? 'btn-warning' : 'btn-outline'}`}
+            onClick={() => setPendingIntroFilter(!pendingIntroFilter)}
+            style={{
+              whiteSpace: 'nowrap',
+              fontSize: '0.8125rem',
+              padding: '0.5rem 0.75rem',
+              borderRadius: '6px',
+              ...(pendingIntroFilter ? { background: '#d97706', borderColor: '#d97706', color: 'white' } : {}),
+            }}
+            title="Filter leads with a pending intro email awaiting approval"
+          >
+            <FaEnvelopeOpen style={{ marginRight: '0.25rem' }} />
+            {pendingIntroFilter ? 'Pending Only' : 'Pending Email'}
+          </button>
+
           <select
             className="filter-select"
             value={`${sortBy}-${sortOrder}`}
@@ -527,6 +547,21 @@ function LeadsList() {
                       <Link to={`/leads/${lead.id}`} style={{ fontWeight: 600, color: 'var(--primary-color)' }}>
                         {lead.dispensary_name}
                       </Link>
+                      {lead.pending_intro_email && (
+                        <div style={{
+                          display: 'inline-block',
+                          marginLeft: '0.5rem',
+                          padding: '0.125rem 0.5rem',
+                          borderRadius: '50px',
+                          fontSize: '0.6875rem',
+                          fontWeight: 600,
+                          background: '#fef3c7',
+                          color: '#d97706',
+                        }}>
+                          <FaEnvelopeOpen size={9} style={{ marginRight: '0.25rem' }} />
+                          Email Pending
+                        </div>
+                      )}
                     </td>
                     <td>
                       <span

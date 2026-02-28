@@ -71,6 +71,8 @@ function LeadDetail() {
   const [showAiCallMenu, setShowAiCallMenu] = useState(false);
   const [showScheduleCallModal, setShowScheduleCallModal] = useState(false);
   const [scheduleCallForm, setScheduleCallForm] = useState({ scheduledFor: '', delaySeconds: 30 });
+  const [approvingEmail, setApprovingEmail] = useState(false);
+  const [dismissingEmail, setDismissingEmail] = useState(false);
 
   const fetchLead = useCallback(async () => {
     try {
@@ -741,6 +743,79 @@ function LeadDetail() {
         </div>
 
         <div className="lead-detail-body">
+          {/* Pending Intro Email Approval Banner */}
+          {lead.pending_intro_email && (() => {
+            const pending = typeof lead.pending_intro_email === 'string'
+              ? JSON.parse(lead.pending_intro_email)
+              : lead.pending_intro_email;
+            return (
+              <div style={{
+                background: '#fef3c7',
+                border: '1px solid #d97706',
+                borderRadius: '8px',
+                padding: '1rem',
+                marginBottom: '1.5rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <FaEnvelope style={{ color: '#d97706', fontSize: '1.25rem', flexShrink: 0 }} />
+                  <div>
+                    <strong style={{ color: '#92400e' }}>Intro email ready to send to {pending.to}</strong>
+                    <div style={{ fontSize: '0.8125rem', color: '#92400e', marginTop: '0.125rem' }}>
+                      Subject: {pending.subject}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    className="btn btn-sm"
+                    style={{ background: '#198754', color: 'white', border: 'none' }}
+                    disabled={approvingEmail}
+                    onClick={async () => {
+                      setApprovingEmail(true);
+                      try {
+                        await leadsApi.approveIntroEmail(id);
+                        toast.success('Intro email sent successfully!');
+                        fetchLead();
+                      } catch (error) {
+                        const msg = error.response?.data?.error || 'Failed to send intro email';
+                        toast.error(msg);
+                      } finally {
+                        setApprovingEmail(false);
+                      }
+                    }}
+                  >
+                    <FaPaperPlane style={{ marginRight: '0.25rem' }} />
+                    {approvingEmail ? 'Sending...' : 'Send'}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-outline"
+                    disabled={dismissingEmail}
+                    onClick={async () => {
+                      if (!window.confirm('Dismiss this intro email draft? It will not be sent.')) return;
+                      setDismissingEmail(true);
+                      try {
+                        await leadsApi.dismissIntroEmail(id);
+                        toast.success('Intro email dismissed');
+                        fetchLead();
+                      } catch (error) {
+                        toast.error('Failed to dismiss intro email');
+                      } finally {
+                        setDismissingEmail(false);
+                      }
+                    }}
+                  >
+                    {dismissingEmail ? 'Dismissing...' : 'Dismiss'}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Callback Info Alert */}
           {((lead.callback_days && lead.callback_days !== '[]') || formatTimeSlots(lead.callback_time_slots) || lead.callback_time_from || lead.callback_time_to) && (
             <div

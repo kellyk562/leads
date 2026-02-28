@@ -76,6 +76,12 @@ export const leadsApi = {
   // Merge two leads
   mergeLeads: (keepId, mergeId, fieldsFromMerge) => api.post('/leads/merge', { keepId, mergeId, fieldsFromMerge }),
 
+  // Approve pending intro email (send it)
+  approveIntroEmail: (id) => api.post(`/leads/${id}/approve-intro-email`),
+
+  // Dismiss pending intro email (discard without sending)
+  dismissIntroEmail: (id) => api.post(`/leads/${id}/dismiss-intro-email`),
+
 };
 
 // Tasks API

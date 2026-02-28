@@ -20,7 +20,7 @@ const validateLead = [
 // Get all leads with optional filtering
 router.get('/', async (req, res) => {
   try {
-    const { search, stage, has_ivr, has_callback, has_intro_email, sort = 'updated_at', order = 'DESC' } = req.query;
+    const { search, stage, has_ivr, has_callback, has_intro_email, has_pending_intro, sort = 'updated_at', order = 'DESC' } = req.query;
 
     let sql = `SELECT l.*, sub.last_contact_date,
       EXTRACT(DAY FROM NOW() - sub.last_contact_date)::INTEGER AS days_since_last_contact,
@@ -92,7 +92,11 @@ router.get('/', async (req, res) => {
     }
 
     if (has_intro_email === 'true') {
-      sql += ` AND EXISTS (SELECT 1 FROM contact_history ch WHERE ch.lead_id = l.id AND ch.contact_method = 'Email' AND ch.outcome LIKE 'Intro email auto-sent%')`;
+      sql += ` AND EXISTS (SELECT 1 FROM contact_history ch WHERE ch.lead_id = l.id AND ch.contact_method = 'Email' AND (ch.outcome LIKE 'Intro email auto-sent%' OR ch.outcome LIKE 'Intro email sent%'))`;
+    }
+
+    if (has_pending_intro === 'true') {
+      sql += ` AND l.pending_intro_email IS NOT NULL`;
     }
 
     const validSortColumns = ['contact_date', 'dispensary_name', 'created_at', 'updated_at', 'stage', 'deal_value', 'lead_score'];
@@ -806,6 +810,83 @@ router.patch('/bulk/stage', async (req, res) => {
     res.status(500).json({ error: 'Failed to bulk update stage' });
   } finally {
     client.release();
+  }
+});
+
+// Approve pending intro email — send it and clear the pending field
+router.post('/:id/approve-intro-email', param('id').isInt(), async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const lead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    if (!lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+    if (!lead.pending_intro_email) {
+      return res.status(400).json({ error: 'No pending intro email for this lead' });
+    }
+
+    const pending = typeof lead.pending_intro_email === 'string'
+      ? JSON.parse(lead.pending_intro_email)
+      : lead.pending_intro_email;
+
+    const emailService = require('../services/emailService');
+    await emailService.sendEmail({ to: pending.to, subject: pending.subject, text: pending.body });
+
+    await db.run(
+      `INSERT INTO contact_history (lead_id, contact_method, notes, outcome, email_subject, email_template_id)
+       VALUES ($1, 'Email', $2, $3, $4, $5)`,
+      [req.params.id, pending.body, `Intro email sent (approved) (template: ${pending.templateName})`, pending.subject, pending.templateId]
+    );
+
+    await db.run(
+      `UPDATE leads SET pending_intro_email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [req.params.id]
+    );
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    res.json(updatedLead);
+  } catch (error) {
+    console.error('Error approving intro email:', error);
+    res.status(500).json({ error: 'Failed to send intro email' });
+  }
+});
+
+// Dismiss pending intro email — clear without sending
+router.post('/:id/dismiss-intro-email', param('id').isInt(), async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const lead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    if (!lead) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+    if (!lead.pending_intro_email) {
+      return res.status(400).json({ error: 'No pending intro email for this lead' });
+    }
+
+    await db.run(
+      `INSERT INTO contact_history (lead_id, contact_method, notes, outcome)
+       VALUES ($1, 'Email', $2, $3)`,
+      [req.params.id, 'Intro email draft dismissed', 'Intro email dismissed']
+    );
+
+    await db.run(
+      `UPDATE leads SET pending_intro_email = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [req.params.id]
+    );
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    res.json(updatedLead);
+  } catch (error) {
+    console.error('Error dismissing intro email:', error);
+    res.status(500).json({ error: 'Failed to dismiss intro email' });
   }
 });
 

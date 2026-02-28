@@ -334,8 +334,8 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
           [leadId, `AI Call - Contact info saved. Owner: ${owner_name || 'N/A'}, Email: ${email || 'N/A'}`, 'Contact Info Collected']
         );
 
-        // Auto-send Intro email whenever an email is captured during a call
-        if (email && emailService.isConfigured()) {
+        // Save intro email draft for manual approval (instead of auto-sending)
+        if (email) {
           try {
             const template = await get(
               `SELECT * FROM email_templates WHERE category = 'Intro' LIMIT 1`
@@ -346,20 +346,32 @@ async function handleSaveContactInfo({ leadId, vapiCallId, args, toolCall, resul
                 const subject = renderTemplate(template.subject, lead);
                 const body = renderTemplate(template.body, lead);
 
-                await emailService.sendEmail({ to: email, subject, text: body });
+                const pendingEmail = {
+                  to: email,
+                  subject,
+                  body,
+                  templateId: template.id,
+                  templateName: template.name,
+                  capturedAt: new Date().toISOString()
+                };
+
+                await run(
+                  `UPDATE leads SET pending_intro_email = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+                  [JSON.stringify(pendingEmail), leadId]
+                );
 
                 await run(
                   `INSERT INTO contact_history (lead_id, contact_method, notes, outcome, email_subject, email_template_id)
                    VALUES ($1, 'Email', $2, $3, $4, $5)`,
-                  [leadId, body, `Intro email auto-sent (template: ${template.name})`, subject, template.id]
+                  [leadId, body, `Intro email pending approval (template: ${template.name})`, subject, template.id]
                 );
-                console.log(`Intro email sent to ${email} for lead ${leadId}`);
+                console.log(`Intro email draft saved for lead ${leadId} (pending approval)`);
               }
             } else {
               console.error('No Intro email template found in email_templates');
             }
           } catch (emailErr) {
-            console.error('Intro email send error:', emailErr);
+            console.error('Intro email draft save error:', emailErr);
           }
         }
 

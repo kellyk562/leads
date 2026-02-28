@@ -308,6 +308,19 @@ async function initDatabase() {
       END $$;
     `);
 
+    // Add pending_intro_email column to leads (manual approval workflow)
+    await client.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_name = 'leads' AND column_name = 'pending_intro_email'
+        ) THEN
+          ALTER TABLE leads ADD COLUMN pending_intro_email JSONB DEFAULT NULL;
+        END IF;
+      END $$;
+    `);
+
     // Create call_logs table
     await client.query(`
       CREATE TABLE IF NOT EXISTS call_logs (
