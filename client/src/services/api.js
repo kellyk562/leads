@@ -23,6 +23,9 @@ export const leadsApi = {
   // Update lead
   update: (id, data) => api.put(`/leads/${id}`, data),
 
+  // Partial update lead (lightweight PATCH)
+  patchLead: (id, data) => api.patch(`/leads/${id}`, data),
+
   // Update lead stage (lightweight)
   updateStage: (id, stage, reason) => api.patch(`/leads/${id}/stage`, { stage, ...(reason && { reason }) }),
 

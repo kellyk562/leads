@@ -233,6 +233,8 @@ router.get('/briefing', async (req, res) => {
       db.all(`
         SELECT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
           l.call_status, l.call_summary, l.has_ivr,
+          l.contact_name, l.owner_name, l.contact_number, l.dispensary_number,
+          l.notes, l.current_pos_system, l.city, l.state,
           rc.recording_url, rc.status AS log_status, rc.summary AS log_summary,
           rc.duration AS log_duration, rc.ended_at AS log_ended_at
         FROM (
@@ -931,6 +933,60 @@ router.post('/:id/dismiss-intro-email', param('id').isInt(), async (req, res) =>
   } catch (error) {
     console.error('Error dismissing intro email:', error);
     res.status(500).json({ error: 'Failed to dismiss intro email' });
+  }
+});
+
+// Partial update lead (lightweight PATCH — no required fields)
+router.patch('/:id', param('id').isInt(), async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const existing = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Lead not found' });
+    }
+
+    const allowedFields = [
+      'dispensary_name', 'address', 'city', 'state', 'zip_code',
+      'dispensary_number', 'contact_name', 'contact_position',
+      'manager_name', 'owner_name', 'contact_number', 'contact_email',
+      'website', 'current_pos_system', 'notes', 'deal_value',
+      'priority', 'source', 'license_number', 'estimated_revenue',
+      'number_of_locations'
+    ];
+
+    const updates = [];
+    const values = [];
+    let paramIdx = 1;
+
+    for (const field of allowedFields) {
+      if (req.body[field] !== undefined) {
+        updates.push(`${field} = $${paramIdx}`);
+        values.push(req.body[field] === '' ? null : req.body[field]);
+        paramIdx++;
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update' });
+    }
+
+    updates.push(`updated_at = CURRENT_TIMESTAMP`);
+    values.push(req.params.id);
+
+    await db.run(
+      `UPDATE leads SET ${updates.join(', ')} WHERE id = $${paramIdx}`,
+      values
+    );
+
+    const updatedLead = await db.get('SELECT * FROM leads WHERE id = $1', [req.params.id]);
+    res.json(updatedLead);
+  } catch (error) {
+    console.error('Error patching lead:', error);
+    res.status(500).json({ error: 'Failed to update lead' });
   }
 });
 

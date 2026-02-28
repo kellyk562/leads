@@ -125,6 +125,10 @@ function Dashboard() {
   const [activityRange, setActivityRange] = useState('day');
   const [selectedCard, setSelectedCard] = useState(null);
   const [expandedLeadId, setExpandedLeadId] = useState(null);
+  const [editingLeadId, setEditingLeadId] = useState(null);
+  const [editForm, setEditForm] = useState({});
+  const [editOriginal, setEditOriginal] = useState({});
+  const [saving, setSaving] = useState(false);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
@@ -179,6 +183,54 @@ function Dashboard() {
     const match = notes?.match(/Stage changed from "(.+?)" to "(.+?)"/);
     if (match) return { from: match[1], to: match[2] };
     return null;
+  };
+
+  const startEditing = (lead) => {
+    const fields = {
+      manager_name: lead.manager_name || '',
+      contact_email: lead.contact_email || '',
+      dispensary_number: lead.dispensary_number || '',
+      contact_number: lead.contact_number || '',
+      current_pos_system: lead.current_pos_system || '',
+      notes: lead.notes || '',
+    };
+    setEditingLeadId(lead.id);
+    setEditForm(fields);
+    setEditOriginal(fields);
+  };
+
+  const cancelEditing = () => {
+    setEditingLeadId(null);
+    setEditForm({});
+    setEditOriginal({});
+  };
+
+  const hasEdits = editingLeadId && Object.keys(editForm).some(k => editForm[k] !== editOriginal[k]);
+
+  const saveEdits = async (leadId) => {
+    const changed = {};
+    for (const k of Object.keys(editForm)) {
+      if (editForm[k] !== editOriginal[k]) changed[k] = editForm[k];
+    }
+    if (Object.keys(changed).length === 0) return;
+    try {
+      setSaving(true);
+      await leadsApi.patchLead(leadId, changed);
+      // Update local briefing state
+      setBriefing(prev => ({
+        ...prev,
+        callLeads: prev.callLeads.map(l => l.id === leadId ? { ...l, ...changed } : l),
+      }));
+      toast.success('Lead updated');
+      setEditingLeadId(null);
+      setEditForm({});
+      setEditOriginal({});
+    } catch (err) {
+      console.error('Error saving lead:', err);
+      toast.error('Failed to save changes');
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (loading) {
@@ -260,21 +312,118 @@ function Dashboard() {
         </div>
         {isExpanded && (
           <div style={{ padding: '0 0.75rem 0.75rem', borderTop: '1px solid #e9ecef' }}>
-            {dur != null && (
-              <div style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.5rem' }}>
-                Duration: {Math.round(dur)}s
-                {lead.log_ended_at && <> &middot; {format(new Date(lead.log_ended_at), 'MMM d, h:mm a')}</>}
-              </div>
-            )}
-            {summary && (
-              <div style={{
-                marginTop: '0.5rem', fontSize: '0.8125rem', color: '#374151',
-                background: '#fff', borderRadius: '6px', padding: '0.5rem 0.75rem',
-                border: '1px solid #e5e7eb', lineHeight: 1.5
-              }}>
-                {summary}
-              </div>
-            )}
+            {/* Call info bar */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
+              {lead.log_ended_at && (
+                <span style={{ fontSize: '0.75rem', color: '#6c757d' }}>
+                  Called {format(new Date(lead.log_ended_at), 'MMM d')} at {format(new Date(lead.log_ended_at), 'h:mm a')}
+                </span>
+              )}
+              {dur != null && (
+                <span style={{
+                  fontSize: '0.625rem', fontWeight: 700, padding: '0.125rem 0.5rem',
+                  borderRadius: '50px', background: '#e9ecef', color: '#495057'
+                }}>
+                  {Math.round(dur)}s
+                </span>
+              )}
+              {summary && (
+                <span style={{ fontSize: '0.75rem', color: '#374151', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {summary.split(/[.!?]/)[0]?.substring(0, 120)}
+                </span>
+              )}
+            </div>
+
+            {/* Editable fields */}
+            {(() => {
+              const isEditing = editingLeadId === lead.id;
+              const fields = [
+                { key: 'manager_name', label: 'Contact Name' },
+                { key: 'contact_email', label: 'Email' },
+                { key: 'dispensary_number', label: 'Dispensary Phone' },
+                { key: 'contact_number', label: 'Direct Phone' },
+                { key: 'current_pos_system', label: 'Current POS' },
+              ];
+              const inputStyle = {
+                width: '100%', padding: '0.3rem 0.5rem', fontSize: '0.8125rem',
+                border: '1px solid #dee2e6', borderRadius: '4px', background: '#fff',
+              };
+              const labelStyle = { fontSize: '0.6875rem', color: '#6c757d', marginBottom: '0.125rem' };
+
+              return (
+                <div style={{ marginTop: '0.5rem' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                    {fields.map(f => (
+                      <div key={f.key}>
+                        <div style={labelStyle}>{f.label}</div>
+                        {isEditing ? (
+                          <input
+                            style={inputStyle}
+                            value={editForm[f.key] || ''}
+                            onChange={e => setEditForm(prev => ({ ...prev, [f.key]: e.target.value }))}
+                          />
+                        ) : (
+                          <div
+                            style={{ fontSize: '0.8125rem', color: lead[f.key] ? '#212529' : '#adb5bd', padding: '0.3rem 0', cursor: 'pointer', minHeight: '1.5rem' }}
+                            onClick={() => startEditing(lead)}
+                          >
+                            {lead[f.key] || '---'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  {/* Notes — full width */}
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <div style={labelStyle}>Notes</div>
+                    {isEditing ? (
+                      <textarea
+                        style={{ ...inputStyle, minHeight: '3rem', resize: 'vertical' }}
+                        value={editForm.notes || ''}
+                        onChange={e => setEditForm(prev => ({ ...prev, notes: e.target.value }))}
+                      />
+                    ) : (
+                      <div
+                        style={{ fontSize: '0.8125rem', color: lead.notes ? '#212529' : '#adb5bd', padding: '0.3rem 0', cursor: 'pointer', whiteSpace: 'pre-wrap', minHeight: '1.5rem' }}
+                        onClick={() => startEditing(lead)}
+                      >
+                        {lead.notes || '---'}
+                      </div>
+                    )}
+                  </div>
+                  {/* Save / Cancel */}
+                  {isEditing && (
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                      {hasEdits && (
+                        <button
+                          onClick={() => saveEdits(lead.id)}
+                          disabled={saving}
+                          style={{
+                            padding: '0.3rem 1rem', fontSize: '0.8125rem', fontWeight: 600,
+                            background: '#2d5a27', color: '#fff', border: 'none', borderRadius: '6px',
+                            cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
+                          }}
+                        >
+                          {saving ? 'Saving...' : 'Save'}
+                        </button>
+                      )}
+                      <button
+                        onClick={cancelEditing}
+                        style={{
+                          padding: '0.3rem 1rem', fontSize: '0.8125rem',
+                          background: '#f8f9fa', color: '#495057', border: '1px solid #dee2e6',
+                          borderRadius: '6px', cursor: 'pointer',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* Audio player */}
             {lead.recording_url && <CallPlayer src={lead.recording_url} />}
             {!summary && !lead.recording_url && (
               <p style={{ fontSize: '0.8125rem', color: '#6c757d', margin: '0.5rem 0 0', fontStyle: 'italic' }}>
