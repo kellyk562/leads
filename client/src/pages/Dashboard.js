@@ -6,8 +6,6 @@ import {
   FaPhoneAlt,
   FaClock,
   FaArrowRight,
-  FaTasks,
-  FaExclamationTriangle,
   FaExchangeAlt,
   FaRegClock,
   FaEnvelope,
@@ -17,7 +15,7 @@ import {
   FaCalendarCheck,
   FaTimes
 } from 'react-icons/fa';
-import { leadsApi, tasksApi, emailApi } from '../services/api';
+import { leadsApi, emailApi } from '../services/api';
 import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 import QuickLogModal from '../components/QuickLogModal';
 import ClickToCall from '../components/ClickToCall';
@@ -25,7 +23,6 @@ import ClickToCall from '../components/ClickToCall';
 function Dashboard() {
   const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showOverdue, setShowOverdue] = useState(true);
   const [quickLog, setQuickLog] = useState(null);
   const [scheduledEmails, setScheduledEmails] = useState([]);
   const [activityRange, setActivityRange] = useState('week');
@@ -72,16 +69,6 @@ function Dashboard() {
     fetchBriefing();
   }, [fetchBriefing]);
 
-  const handleToggleTask = async (taskId) => {
-    try {
-      await tasksApi.toggleComplete(taskId);
-      fetchBriefing();
-    } catch (error) {
-      console.error('Error toggling task:', error);
-      toast.error('Failed to update task');
-    }
-  };
-
   const formatTimeRange = (from, to) => {
     if (!from && !to) return '';
     if (from && to) return `${from} - ${to}`;
@@ -105,13 +92,6 @@ function Dashboard() {
   }
 
   const recurringCallbacks = (briefing?.todayCallbacks || []).filter(l => !l.callback_date);
-  const allTasks = [
-    ...(briefing?.overdueTasks || []).map(t => ({ ...t, _isOverdue: true })),
-    ...(briefing?.todayTasks || [])
-  ];
-  const visibleTasks = showOverdue ? allTasks : (briefing?.todayTasks || []);
-  const overdueCount = (briefing?.overdueTasks || []).length;
-  const todayCount = (briefing?.todayTasks || []).length;
 
   const callsTrend = briefing ? getTrend(briefing.callsThisWeek, briefing.callsLastWeek) : null;
   const emailsTrend = briefing ? getTrend(briefing.emailsThisWeek, briefing.emailsLastWeek) : null;
@@ -326,58 +306,6 @@ function Dashboard() {
           <p className="no-callbacks">No callbacks scheduled for {todayDay}</p>
         )}
       </div>
-
-      {/* Tasks (Overdue + Today) */}
-      {allTasks.length > 0 && (
-        <div className="callbacks-section">
-          <h2 style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span><FaTasks /> Tasks ({allTasks.length})</span>
-            {overdueCount > 0 && todayCount > 0 && (
-              <button
-                className="btn btn-sm btn-outline"
-                style={{ fontSize: '0.75rem' }}
-                onClick={() => setShowOverdue(!showOverdue)}
-              >
-                {showOverdue ? `Hide Overdue (${overdueCount})` : `Show Overdue (${overdueCount})`}
-              </button>
-            )}
-          </h2>
-          <div className="task-list">
-            {visibleTasks.map(task => (
-              <div
-                key={task.id}
-                className="task-item"
-                style={{ borderLeftColor: task._isOverdue ? '#dc3545' : '#f5a623' }}
-              >
-                <input
-                  type="checkbox"
-                  className="task-checkbox"
-                  checked={false}
-                  onChange={() => handleToggleTask(task.id)}
-                />
-                <div className="task-content">
-                  <span className="task-title">{task.title}</span>
-                  <div className="task-meta">
-                    <Link to={`/leads/${task.lead_id}`} style={{ color: '#2d5a27', textDecoration: 'none', fontSize: '0.8125rem' }}>
-                      {task.dispensary_name}
-                    </Link>
-                    <span style={{ color: task._isOverdue ? '#dc3545' : '#6c757d', fontSize: '0.8125rem' }}>
-                      {task._isOverdue && <FaExclamationTriangle size={10} style={{ marginRight: '0.25rem' }} />}
-                      {task.due_date ? format(new Date(task.due_date.split('T')[0] + 'T00:00:00'), 'MMM d') : ''}
-                      {task.due_time ? ` at ${task.due_time}` : ''}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-          <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-            <Link to="/tasks" className="btn btn-outline">
-              View All Tasks <FaArrowRight />
-            </Link>
-          </div>
-        </div>
-      )}
 
       {/* Stale Leads */}
       {(briefing?.staleLeads || []).length > 0 && (
