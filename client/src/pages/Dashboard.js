@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { toast } from 'react-toastify';
@@ -13,20 +13,118 @@ import {
   FaArrowUp,
   FaArrowDown,
   FaCalendarCheck,
-  FaTimes
+  FaTimes,
+  FaPlay,
+  FaPause,
+  FaBackward,
+  FaForward,
+  FaChevronDown,
+  FaChevronUp
 } from 'react-icons/fa';
 import { leadsApi, emailApi } from '../services/api';
 import { STAGE_COLORS, STAGE_BG_COLORS } from '../constants/stages';
 import QuickLogModal from '../components/QuickLogModal';
 import ClickToCall from '../components/ClickToCall';
 
+// Outcome badge config
+const OUTCOME_BADGES = {
+  voicemail: { label: 'Voicemail', bg: '#fef3c7', color: '#92400e' },
+  no_answer: { label: 'No Answer', bg: '#fff3e0', color: '#e65100' },
+  busy: { label: 'Busy', bg: '#fff3e0', color: '#e65100' },
+  ivr: { label: 'IVR', bg: '#fee2e2', color: '#991b1b' },
+  completed: { label: 'Completed', bg: '#d1e7dd', color: '#198754' },
+  demo_booked: { label: 'Demo Booked', bg: '#e8d5f5', color: '#6b21a8' },
+  intro_email: { label: 'Intro Email Sent', bg: '#dbeafe', color: '#1e40af' },
+  failed: { label: 'Failed', bg: '#f8d7da', color: '#dc3545' },
+};
+
+function getCallOutcomeBadges(lead) {
+  const badges = [];
+  const status = lead.log_status || lead.call_status;
+  if (status === 'voicemail') badges.push('voicemail');
+  else if (status === 'no_answer') badges.push('no_answer');
+  else if (status === 'busy') badges.push('busy');
+  else if (status === 'failed') badges.push('failed');
+  else if (status === 'completed') badges.push('completed');
+  if (lead.has_ivr) badges.push('ivr');
+  if (lead.stage === 'Demo Scheduled') badges.push('demo_booked');
+  return badges;
+}
+
+function getEmailOutcomeBadges(lead) {
+  const badges = [];
+  const outcome = (lead.email_outcome || '').toLowerCase();
+  if (outcome.includes('intro')) badges.push('intro_email');
+  return badges;
+}
+
+// Audio player with 15s skip controls
+function CallPlayer({ src }) {
+  const audioRef = useRef(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const toggle = () => {
+    if (!audioRef.current) return;
+    if (playing) { audioRef.current.pause(); } else { audioRef.current.play(); }
+    setPlaying(!playing);
+  };
+
+  const skip = (seconds) => {
+    if (!audioRef.current) return;
+    audioRef.current.currentTime = Math.max(0, Math.min(audioRef.current.duration || 0, audioRef.current.currentTime + seconds));
+  };
+
+  const fmt = (s) => {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem', background: '#f8f9fa', borderRadius: '8px', padding: '0.5rem 0.75rem' }}>
+      <audio
+        ref={audioRef}
+        src={src}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+        onEnded={() => setPlaying(false)}
+      />
+      <button onClick={() => skip(-15)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#495057', padding: '0.25rem', fontSize: '0.75rem' }} title="Back 15s">
+        <FaBackward size={12} />
+      </button>
+      <button onClick={toggle} style={{ background: '#2d5a27', border: 'none', cursor: 'pointer', color: 'white', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {playing ? <FaPause size={10} /> : <FaPlay size={10} style={{ marginLeft: '2px' }} />}
+      </button>
+      <button onClick={() => skip(15)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#495057', padding: '0.25rem', fontSize: '0.75rem' }} title="Forward 15s">
+        <FaForward size={12} />
+      </button>
+      <div
+        onClick={(e) => {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const pct = (e.clientX - rect.left) / rect.width;
+          if (audioRef.current) audioRef.current.currentTime = pct * (audioRef.current.duration || 0);
+        }}
+        style={{ flex: 1, height: '6px', background: '#dee2e6', borderRadius: '3px', cursor: 'pointer', position: 'relative' }}
+      >
+        <div style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%`, height: '100%', background: '#2d5a27', borderRadius: '3px', transition: 'width 0.1s' }} />
+      </div>
+      <span style={{ fontSize: '0.6875rem', color: '#6c757d', whiteSpace: 'nowrap', minWidth: '70px', textAlign: 'right' }}>
+        {fmt(currentTime)} / {fmt(duration)}
+      </span>
+    </div>
+  );
+}
+
 function Dashboard() {
   const [briefing, setBriefing] = useState(null);
   const [loading, setLoading] = useState(true);
   const [quickLog, setQuickLog] = useState(null);
   const [scheduledEmails, setScheduledEmails] = useState([]);
-  const [activityRange, setActivityRange] = useState('week');
+  const [activityRange, setActivityRange] = useState('day');
   const [selectedCard, setSelectedCard] = useState(null);
+  const [expandedLeadId, setExpandedLeadId] = useState(null);
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
@@ -97,6 +195,172 @@ function Dashboard() {
   const emailsTrend = briefing ? getTrend(briefing.emailsThisWeek, briefing.emailsLastWeek) : null;
   const dealsTrend = briefing ? getTrend(briefing.dealsMovedThisWeek, briefing.dealsMovedLastWeek) : null;
 
+  // Render outcome badges for a lead
+  const renderBadges = (badgeKeys) => {
+    if (!badgeKeys || badgeKeys.length === 0) return null;
+    return (
+      <span style={{ display: 'inline-flex', gap: '0.25rem', marginLeft: '0.5rem', flexWrap: 'wrap' }}>
+        {badgeKeys.map(key => {
+          const badge = OUTCOME_BADGES[key];
+          if (!badge) return null;
+          return (
+            <span key={key} style={{
+              fontSize: '0.625rem', fontWeight: 700, padding: '0.125rem 0.5rem',
+              borderRadius: '50px', background: badge.bg, color: badge.color, whiteSpace: 'nowrap'
+            }}>
+              {badge.label}
+            </span>
+          );
+        })}
+      </span>
+    );
+  };
+
+  // Render expandable lead row for calls
+  const renderCallLead = (lead) => {
+    const isExpanded = expandedLeadId === lead.id;
+    const badges = getCallOutcomeBadges(lead);
+    const summary = lead.log_summary || lead.call_summary;
+    const dur = lead.log_duration;
+
+    return (
+      <div key={lead.id} style={{ background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef', overflow: 'hidden' }}>
+        <div
+          onClick={() => setExpandedLeadId(isExpanded ? null : lead.id)}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: '0.5rem 0.75rem', cursor: 'pointer',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem', flex: 1, minWidth: 0 }}>
+            <Link to={`/leads/${lead.id}`} onClick={(e) => e.stopPropagation()} style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem', textDecoration: 'none' }}>
+              {lead.dispensary_name}
+            </Link>
+            <span className="stage-badge" style={{
+              background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+              color: STAGE_COLORS[lead.stage || 'New Lead'],
+              fontSize: '0.6rem',
+            }}>
+              {lead.stage || 'New Lead'}
+            </span>
+            {renderBadges(badges)}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+            {lead.deal_value > 0 && (
+              <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
+                ${Number(lead.deal_value).toLocaleString()}/mo
+              </span>
+            )}
+            {(summary || lead.recording_url) ? (
+              isExpanded ? <FaChevronUp size={10} style={{ color: '#adb5bd' }} /> : <FaChevronDown size={10} style={{ color: '#adb5bd' }} />
+            ) : (
+              <FaArrowRight size={10} style={{ color: '#adb5bd' }} />
+            )}
+          </div>
+        </div>
+        {isExpanded && (
+          <div style={{ padding: '0 0.75rem 0.75rem', borderTop: '1px solid #e9ecef' }}>
+            {dur != null && (
+              <div style={{ fontSize: '0.75rem', color: '#6c757d', marginTop: '0.5rem' }}>
+                Duration: {Math.round(dur)}s
+                {lead.log_ended_at && <> &middot; {format(new Date(lead.log_ended_at), 'MMM d, h:mm a')}</>}
+              </div>
+            )}
+            {summary && (
+              <div style={{
+                marginTop: '0.5rem', fontSize: '0.8125rem', color: '#374151',
+                background: '#fff', borderRadius: '6px', padding: '0.5rem 0.75rem',
+                border: '1px solid #e5e7eb', lineHeight: 1.5
+              }}>
+                {summary}
+              </div>
+            )}
+            {lead.recording_url && <CallPlayer src={lead.recording_url} />}
+            {!summary && !lead.recording_url && (
+              <p style={{ fontSize: '0.8125rem', color: '#6c757d', margin: '0.5rem 0 0', fontStyle: 'italic' }}>
+                No recording or summary available.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render lead row for emails
+  const renderEmailLead = (lead) => {
+    const badges = getEmailOutcomeBadges(lead);
+    return (
+      <Link
+        key={lead.id}
+        to={`/leads/${lead.id}`}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          textDecoration: 'none', color: 'inherit',
+          padding: '0.5rem 0.75rem', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
+          <span style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem' }}>{lead.dispensary_name}</span>
+          <span className="stage-badge" style={{
+            background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+            color: STAGE_COLORS[lead.stage || 'New Lead'],
+            fontSize: '0.6rem',
+          }}>
+            {lead.stage || 'New Lead'}
+          </span>
+          {renderBadges(badges)}
+          {lead.email_subject && (
+            <span style={{ fontSize: '0.75rem', color: '#6c757d', marginLeft: '0.25rem' }}>{lead.email_subject}</span>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0 }}>
+          {lead.deal_value > 0 && (
+            <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
+              ${Number(lead.deal_value).toLocaleString()}/mo
+            </span>
+          )}
+          <FaArrowRight size={10} style={{ color: '#adb5bd' }} />
+        </div>
+      </Link>
+    );
+  };
+
+  // Render lead row for deals (same as before)
+  const renderDealLead = (lead) => (
+    <Link
+      key={lead.id}
+      to={`/leads/${lead.id}`}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        textDecoration: 'none', color: 'inherit',
+        padding: '0.5rem 0.75rem', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef',
+      }}
+    >
+      <div>
+        <span style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem' }}>{lead.dispensary_name}</span>
+        <span className="stage-badge" style={{
+          background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
+          color: STAGE_COLORS[lead.stage || 'New Lead'],
+          fontSize: '0.65rem', marginLeft: '0.5rem',
+        }}>
+          {lead.stage || 'New Lead'}
+        </span>
+        {lead.manager_name && (
+          <span style={{ fontSize: '0.8rem', color: '#6c757d', marginLeft: '0.5rem' }}>{lead.manager_name}</span>
+        )}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        {lead.deal_value > 0 && (
+          <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
+            ${Number(lead.deal_value).toLocaleString()}/mo
+          </span>
+        )}
+        <FaArrowRight size={10} style={{ color: '#adb5bd' }} />
+      </div>
+    </Link>
+  );
+
   return (
     <div className="dashboard">
       {/* Your Activity */}
@@ -122,7 +386,7 @@ function Dashboard() {
                   fontWeight: 600,
                   cursor: 'pointer',
                 }}
-                onClick={() => { setActivityRange(opt.key); setSelectedCard(null); }}
+                onClick={() => { setActivityRange(opt.key); setSelectedCard(null); setExpandedLeadId(null); }}
               >
                 {opt.label}
               </button>
@@ -140,7 +404,7 @@ function Dashboard() {
               return (
                 <div
                   key={stat.key}
-                  onClick={() => setSelectedCard(isSelected ? null : stat.key)}
+                  onClick={() => { setSelectedCard(isSelected ? null : stat.key); setExpandedLeadId(null); }}
                   style={{
                     background: isSelected ? '#eaf5e9' : '#f8f9fa',
                     borderRadius: '10px',
@@ -171,7 +435,9 @@ function Dashboard() {
           {selectedCard && (() => {
             const leadMap = { calls: briefing.callLeads, emails: briefing.emailLeads, deals: briefing.dealLeads };
             const titleMap = { calls: 'Leads Called', emails: 'Leads Emailed', deals: 'Leads with Stage Changes' };
+            const rendererMap = { calls: renderCallLead, emails: renderEmailLead, deals: renderDealLead };
             const leads = leadMap[selectedCard] || [];
+            const renderLead = rendererMap[selectedCard];
             return (
               <div style={{ marginTop: '0.75rem', background: '#fff', border: '1px solid #e9ecef', borderRadius: '10px', padding: '0.75rem' }}>
                 <h4 style={{ margin: '0 0 0.5rem', fontSize: '0.875rem', color: '#495057' }}>
@@ -181,49 +447,7 @@ function Dashboard() {
                   <p style={{ margin: 0, fontSize: '0.8125rem', color: '#6c757d' }}>No leads found for this period.</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                    {leads.map((lead) => (
-                      <Link
-                        key={lead.id}
-                        to={`/leads/${lead.id}`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          textDecoration: 'none',
-                          color: 'inherit',
-                          padding: '0.5rem 0.75rem',
-                          background: '#f8f9fa',
-                          borderRadius: '8px',
-                          border: '1px solid #e9ecef',
-                        }}
-                      >
-                        <div>
-                          <span style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem' }}>{lead.dispensary_name}</span>
-                          <span
-                            className="stage-badge"
-                            style={{
-                              background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
-                              color: STAGE_COLORS[lead.stage || 'New Lead'],
-                              fontSize: '0.65rem',
-                              marginLeft: '0.5rem',
-                            }}
-                          >
-                            {lead.stage || 'New Lead'}
-                          </span>
-                          {lead.manager_name && (
-                            <span style={{ fontSize: '0.8rem', color: '#6c757d', marginLeft: '0.5rem' }}>{lead.manager_name}</span>
-                          )}
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                          {lead.deal_value > 0 && (
-                            <span style={{ color: '#2e7d32', fontWeight: 600, fontSize: '0.8rem' }}>
-                              ${Number(lead.deal_value).toLocaleString()}/mo
-                            </span>
-                          )}
-                          <FaArrowRight size={10} style={{ color: '#adb5bd' }} />
-                        </div>
-                      </Link>
-                    ))}
+                    {leads.map(renderLead)}
                   </div>
                 )}
               </div>

@@ -229,23 +229,33 @@ router.get('/briefing', async (req, res) => {
           AND contact_date >= ${prevStart}
           AND contact_date < ${prevEnd}
       `),
-      // Lead details: calls in current period
+      // Lead details: calls in current period (enriched with latest call_log data)
       db.all(`
-        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
-        FROM contact_history ch
-        JOIN leads l ON l.id = ch.lead_id
-        WHERE ch.contact_method = 'Phone'
-          AND ch.contact_date >= ${curStart}
+        SELECT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
+          l.call_status, l.call_summary, l.has_ivr,
+          rc.recording_url, rc.status AS log_status, rc.summary AS log_summary,
+          rc.duration AS log_duration, rc.ended_at AS log_ended_at
+        FROM (
+          SELECT DISTINCT lead_id FROM contact_history
+          WHERE contact_method = 'Phone' AND contact_date >= ${curStart}
+        ) ch_agg
+        JOIN leads l ON l.id = ch_agg.lead_id
+        LEFT JOIN (
+          SELECT DISTINCT ON (lead_id) lead_id, recording_url, status, summary, duration, ended_at
+          FROM call_logs
+          ORDER BY lead_id, COALESCE(ended_at, started_at) DESC
+        ) rc ON rc.lead_id = l.id
         ORDER BY l.dispensary_name ASC
       `),
-      // Lead details: emails in current period
+      // Lead details: emails in current period (enriched with outcome)
       db.all(`
-        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
+        SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
+          ch.outcome AS email_outcome, ch.email_subject
         FROM contact_history ch
         JOIN leads l ON l.id = ch.lead_id
         WHERE ch.contact_method = 'Email'
           AND ch.contact_date >= ${curStart}
-        ORDER BY l.dispensary_name ASC
+        ORDER BY l.id, ch.contact_date DESC
       `),
       // Lead details: deals moved in current period
       db.all(`
