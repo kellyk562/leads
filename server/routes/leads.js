@@ -269,7 +269,7 @@ router.get('/briefing', async (req, res) => {
           l.notes, l.current_pos_system, l.city, l.state,
           rc.recording_url, rc.status AS log_status, rc.summary AS log_summary,
           rc.duration AS log_duration, rc.ended_at AS log_ended_at,
-          EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+          (EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') OR l.pending_intro_email IS NOT NULL) AS has_scheduled_email,
           (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
         FROM (
           SELECT DISTINCT lead_id FROM contact_history
@@ -289,7 +289,7 @@ router.get('/briefing', async (req, res) => {
         SELECT * FROM (
           SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
             ch.outcome AS email_outcome, ch.email_subject, ch.contact_date,
-            EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+            (EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') OR l.pending_intro_email IS NOT NULL) AS has_scheduled_email,
             (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
           FROM contact_history ch
           JOIN leads l ON l.id = ch.lead_id
@@ -305,7 +305,7 @@ router.get('/briefing', async (req, res) => {
         SELECT * FROM (
           SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
             ch.contact_date,
-            EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+            (EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') OR l.pending_intro_email IS NOT NULL) AS has_scheduled_email,
             (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
           FROM contact_history ch
           JOIN leads l ON l.id = ch.lead_id
