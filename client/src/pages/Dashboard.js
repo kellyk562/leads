@@ -47,7 +47,7 @@ function getCallOutcomeBadges(lead) {
   if (status === 'voicemail') badges.push('voicemail');
   else if (status === 'no_answer') badges.push('no_answer');
   else if (status === 'busy') badges.push('busy');
-  else if (status === 'failed') badges.push('failed');
+  else if (status === 'failed' && !lead.recording_url && !lead.log_summary && !lead.call_summary) badges.push('failed');
   else if (status === 'completed') badges.push('completed');
   if (lead.has_ivr) badges.push('ivr');
   if (lead.stage === 'Demo Scheduled') badges.push('demo_booked');
@@ -58,8 +58,6 @@ function getCallOutcomeBadges(lead) {
 
 function getEmailOutcomeBadges(lead) {
   const badges = [];
-  const outcome = (lead.email_outcome || '').toLowerCase();
-  if (outcome.includes('intro')) badges.push('intro_email');
   if (lead.has_scheduled_email) badges.push('scheduled_email');
   if (lead.has_callback) badges.push('callback_scheduled');
   return badges;
