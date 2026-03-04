@@ -245,6 +245,7 @@ router.get('/briefing', async (req, res) => {
         LEFT JOIN (
           SELECT DISTINCT ON (lead_id) lead_id, recording_url, status, summary, duration, ended_at
           FROM call_logs
+          WHERE status != 'ringing'
           ORDER BY lead_id, COALESCE(ended_at, started_at) DESC
         ) rc ON rc.lead_id = l.id
         ORDER BY l.dispensary_name ASC
