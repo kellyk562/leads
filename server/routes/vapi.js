@@ -918,9 +918,9 @@ router.post('/backfill', async (req, res) => {
         status = 'voicemail';
       }
 
-      // Check if call_logs already has a finalized entry
-      const existing = await get('SELECT id FROM call_logs WHERE vapi_call_id = $1', [vapiCallId]);
-      if (existing) {
+      // Check if call_logs already has a finalized entry (skip if it has real data)
+      const existing = await get('SELECT id, summary, recording_url FROM call_logs WHERE vapi_call_id = $1', [vapiCallId]);
+      if (existing && (existing.summary || existing.recording_url)) {
         skipped++;
         continue;
       }

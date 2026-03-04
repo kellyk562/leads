@@ -662,7 +662,7 @@ function LeadDetail() {
                 title="Next step"
               >&#9654;</button>
             </div>
-            {lead.call_status && (
+            {lead.call_status && lead.call_status !== 'ringing' && (
               <span style={{
                 display: 'inline-block',
                 marginTop: '0.25rem',
