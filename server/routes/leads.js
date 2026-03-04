@@ -168,6 +168,7 @@ router.get('/briefing', async (req, res) => {
     }
 
     const curEndFilter = curEnd ? `AND contact_date < ${curEnd}` : '';
+    const curEndFilterCh = curEnd ? `AND ch.contact_date < ${curEnd}` : '';
 
     const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
            callsThisRow, callsLastRow, emailsThisRow, emailsLastRow,
@@ -294,7 +295,7 @@ router.get('/briefing', async (req, res) => {
           JOIN leads l ON l.id = ch.lead_id
           WHERE ch.contact_method = 'Email'
             AND ch.contact_date >= ${curStart}
-            ${curEndFilter}
+            ${curEndFilterCh}
           ORDER BY l.id, ch.contact_date DESC
         ) sub
         ORDER BY sub.contact_date DESC, sub.dispensary_name ASC
@@ -310,7 +311,7 @@ router.get('/briefing', async (req, res) => {
           JOIN leads l ON l.id = ch.lead_id
           WHERE ch.notes LIKE 'Stage changed%'
             AND ch.contact_date >= ${curStart}
-            ${curEndFilter}
+            ${curEndFilterCh}
           ORDER BY l.id, ch.contact_date DESC
         ) sub
         ORDER BY sub.contact_date DESC, sub.dispensary_name ASC
