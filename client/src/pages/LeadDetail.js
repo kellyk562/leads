@@ -508,9 +508,9 @@ function LeadDetail() {
   return (
     <div className="lead-detail-page">
       <div style={{ marginBottom: '1rem' }}>
-        <Link to={`/leads`} className="btn btn-outline">
-          <FaArrowLeft /> Back to Leads
-        </Link>
+        <button className="btn btn-outline" onClick={() => navigate(-1)}>
+          <FaArrowLeft /> Back
+        </button>
       </div>
 
       <div className="lead-detail">
