@@ -125,21 +125,49 @@ router.get('/briefing', async (req, res) => {
     const todayDate = new Date().toISOString().split('T')[0];
 
     // Time-range for activity metrics
-    const range = ['day', 'week', 'month'].includes(req.query.range) ? req.query.range : 'week';
-    let curStart, prevStart, prevEnd;
-    if (range === 'day') {
+    const range = ['day', 'yesterday', 'week', 'month', 'custom'].includes(req.query.range) ? req.query.range : 'week';
+    let curStart, curEnd, prevStart, prevEnd;
+    const rangeParams = [];
+    let rangeParamIdx = 1;
+
+    if (range === 'custom' && req.query.from && req.query.to) {
+      // Custom date range — use parameterized dates
+      curStart = `$${rangeParamIdx}::date`;
+      rangeParams.push(req.query.from);
+      rangeParamIdx++;
+      curEnd = `$${rangeParamIdx}::date + INTERVAL '1 day'`;
+      rangeParams.push(req.query.to);
+      rangeParamIdx++;
+      // Previous period = same duration ending at 'from'
+      prevEnd = `$${rangeParamIdx}::date`;
+      rangeParams.push(req.query.from);
+      rangeParamIdx++;
+      prevStart = `$${rangeParamIdx}::date - ($${rangeParamIdx + 1}::date - $${rangeParamIdx + 2}::date) - INTERVAL '1 day'`;
+      rangeParams.push(req.query.from, req.query.to, req.query.from);
+      rangeParamIdx += 3;
+    } else if (range === 'day') {
       curStart = 'CURRENT_DATE';
+      curEnd = null; // open-ended (up to now)
       prevStart = 'CURRENT_DATE - INTERVAL \'1 day\'';
       prevEnd = 'CURRENT_DATE';
+    } else if (range === 'yesterday') {
+      curStart = 'CURRENT_DATE - INTERVAL \'1 day\'';
+      curEnd = 'CURRENT_DATE';
+      prevStart = 'CURRENT_DATE - INTERVAL \'2 days\'';
+      prevEnd = 'CURRENT_DATE - INTERVAL \'1 day\'';
     } else if (range === 'month') {
       curStart = 'DATE_TRUNC(\'month\', CURRENT_DATE)';
+      curEnd = null;
       prevStart = 'DATE_TRUNC(\'month\', CURRENT_DATE) - INTERVAL \'1 month\'';
       prevEnd = 'DATE_TRUNC(\'month\', CURRENT_DATE)';
     } else {
       curStart = 'DATE_TRUNC(\'week\', CURRENT_DATE)';
+      curEnd = null;
       prevStart = 'DATE_TRUNC(\'week\', CURRENT_DATE) - INTERVAL \'7 days\'';
       prevEnd = 'DATE_TRUNC(\'week\', CURRENT_DATE)';
     }
+
+    const curEndFilter = curEnd ? `AND contact_date < ${curEnd}` : '';
 
     const [todayCallbacks, overdueTasks, todayTasks, staleLeads, recentMoves,
            callsThisRow, callsLastRow, emailsThisRow, emailsLastRow,
@@ -195,40 +223,43 @@ router.get('/briefing', async (req, res) => {
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Phone'
           AND contact_date >= ${curStart}
-      `),
+          ${curEndFilter}
+      `, rangeParams),
       // Activity counts: calls previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Phone'
           AND contact_date >= ${prevStart}
           AND contact_date < ${prevEnd}
-      `),
+      `, rangeParams),
       // Activity counts: emails current period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Email'
           AND contact_date >= ${curStart}
-      `),
+          ${curEndFilter}
+      `, rangeParams),
       // Activity counts: emails previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE contact_method = 'Email'
           AND contact_date >= ${prevStart}
           AND contact_date < ${prevEnd}
-      `),
+      `, rangeParams),
       // Activity counts: deals moved current period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE notes LIKE 'Stage changed%'
           AND contact_date >= ${curStart}
-      `),
+          ${curEndFilter}
+      `, rangeParams),
       // Activity counts: deals moved previous period
       db.get(`
         SELECT COUNT(*) AS count FROM contact_history
         WHERE notes LIKE 'Stage changed%'
           AND contact_date >= ${prevStart}
           AND contact_date < ${prevEnd}
-      `),
+      `, rangeParams),
       // Lead details: calls in current period (enriched with latest call_log data)
       db.all(`
         SELECT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
@@ -236,10 +267,13 @@ router.get('/briefing', async (req, res) => {
           l.contact_name, l.owner_name, l.contact_number, l.dispensary_number,
           l.notes, l.current_pos_system, l.city, l.state,
           rc.recording_url, rc.status AS log_status, rc.summary AS log_summary,
-          rc.duration AS log_duration, rc.ended_at AS log_ended_at
+          rc.duration AS log_duration, rc.ended_at AS log_ended_at,
+          EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+          (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
         FROM (
           SELECT DISTINCT lead_id FROM contact_history
           WHERE contact_method = 'Phone' AND contact_date >= ${curStart}
+            ${curEndFilter}
         ) ch_agg
         JOIN leads l ON l.id = ch_agg.lead_id
         LEFT JOIN (
@@ -247,27 +281,40 @@ router.get('/briefing', async (req, res) => {
           FROM call_logs
           ORDER BY lead_id, COALESCE(ended_at, started_at) DESC
         ) rc ON rc.lead_id = l.id
-        ORDER BY l.dispensary_name ASC
-      `),
+        ORDER BY rc.ended_at DESC NULLS LAST, l.dispensary_name ASC
+      `, rangeParams),
       // Lead details: emails in current period (enriched with outcome)
       db.all(`
-        SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
-          ch.outcome AS email_outcome, ch.email_subject
-        FROM contact_history ch
-        JOIN leads l ON l.id = ch.lead_id
-        WHERE ch.contact_method = 'Email'
-          AND ch.contact_date >= ${curStart}
-        ORDER BY l.id, ch.contact_date DESC
-      `),
+        SELECT * FROM (
+          SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
+            ch.outcome AS email_outcome, ch.email_subject, ch.contact_date,
+            EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+            (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
+          FROM contact_history ch
+          JOIN leads l ON l.id = ch.lead_id
+          WHERE ch.contact_method = 'Email'
+            AND ch.contact_date >= ${curStart}
+            ${curEndFilter}
+          ORDER BY l.id, ch.contact_date DESC
+        ) sub
+        ORDER BY sub.contact_date DESC, sub.dispensary_name ASC
+      `, rangeParams),
       // Lead details: deals moved in current period
       db.all(`
-        SELECT DISTINCT l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value
-        FROM contact_history ch
-        JOIN leads l ON l.id = ch.lead_id
-        WHERE ch.notes LIKE 'Stage changed%'
-          AND ch.contact_date >= ${curStart}
-        ORDER BY l.dispensary_name ASC
-      `)
+        SELECT * FROM (
+          SELECT DISTINCT ON (l.id) l.id, l.dispensary_name, l.stage, l.contact_email, l.manager_name, l.deal_value,
+            ch.contact_date,
+            EXISTS (SELECT 1 FROM scheduled_emails WHERE lead_id = l.id AND status = 'pending') AS has_scheduled_email,
+            (l.callback_days IS NOT NULL AND l.callback_days != '[]' AND l.callback_days != '') AS has_callback
+          FROM contact_history ch
+          JOIN leads l ON l.id = ch.lead_id
+          WHERE ch.notes LIKE 'Stage changed%'
+            AND ch.contact_date >= ${curStart}
+            ${curEndFilter}
+          ORDER BY l.id, ch.contact_date DESC
+        ) sub
+        ORDER BY sub.contact_date DESC, sub.dispensary_name ASC
+      `, rangeParams)
     ]);
 
     res.json({

@@ -37,6 +37,8 @@ const OUTCOME_BADGES = {
   demo_booked: { label: 'Demo Booked', bg: '#e8d5f5', color: '#6b21a8' },
   intro_email: { label: 'Intro Email Sent', bg: '#dbeafe', color: '#1e40af' },
   failed: { label: 'Failed', bg: '#f8d7da', color: '#dc3545' },
+  scheduled_email: { label: 'Email Scheduled', bg: '#dbeafe', color: '#1e40af' },
+  callback_scheduled: { label: 'Callback', bg: '#e8f5e9', color: '#2d5a27' },
 };
 
 function getCallOutcomeBadges(lead) {
@@ -49,6 +51,8 @@ function getCallOutcomeBadges(lead) {
   else if (status === 'completed') badges.push('completed');
   if (lead.has_ivr) badges.push('ivr');
   if (lead.stage === 'Demo Scheduled') badges.push('demo_booked');
+  if (lead.has_scheduled_email) badges.push('scheduled_email');
+  if (lead.has_callback) badges.push('callback_scheduled');
   return badges;
 }
 
@@ -56,6 +60,8 @@ function getEmailOutcomeBadges(lead) {
   const badges = [];
   const outcome = (lead.email_outcome || '').toLowerCase();
   if (outcome.includes('intro')) badges.push('intro_email');
+  if (lead.has_scheduled_email) badges.push('scheduled_email');
+  if (lead.has_callback) badges.push('callback_scheduled');
   return badges;
 }
 
@@ -131,15 +137,19 @@ function Dashboard() {
   const [editForm, setEditForm] = useState({});
   const [editOriginal, setEditOriginal] = useState({});
   const [saving, setSaving] = useState(false);
+  const [customFrom, setCustomFrom] = useState('');
+  const [customTo, setCustomTo] = useState('');
 
   const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const todayDay = days[new Date().getDay()];
 
   const fetchBriefing = useCallback(async () => {
+    // For custom range, wait until both dates are set
+    if (activityRange === 'custom' && (!customFrom || !customTo)) return;
     try {
       setLoading(true);
       const [briefRes, schedRes, callSchedRes] = await Promise.all([
-        leadsApi.getBriefing(activityRange),
+        leadsApi.getBriefing(activityRange, activityRange === 'custom' ? customFrom : undefined, activityRange === 'custom' ? customTo : undefined),
         emailApi.getScheduled().catch(() => ({ data: [] })),
         callsApi.getSchedules().catch(() => ({ data: [] }))
       ]);
@@ -152,7 +162,7 @@ function Dashboard() {
     } finally {
       setLoading(false);
     }
-  }, [activityRange]);
+  }, [activityRange, customFrom, customTo]);
 
   const handleCancelScheduled = async (id) => {
     try {
@@ -490,8 +500,17 @@ function Dashboard() {
     );
   };
 
-  // Render lead row for deals (same as before)
-  const renderDealLead = (lead) => (
+  // Render lead row for deals
+  const getDealOutcomeBadges = (lead) => {
+    const badges = [];
+    if (lead.has_scheduled_email) badges.push('scheduled_email');
+    if (lead.has_callback) badges.push('callback_scheduled');
+    return badges;
+  };
+
+  const renderDealLead = (lead) => {
+    const badges = getDealOutcomeBadges(lead);
+    return (
     <Link
       key={lead.id}
       to={`/leads/${lead.id}`}
@@ -501,17 +520,18 @@ function Dashboard() {
         padding: '0.5rem 0.75rem', background: '#f8f9fa', borderRadius: '8px', border: '1px solid #e9ecef',
       }}
     >
-      <div>
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.25rem' }}>
         <span style={{ fontWeight: 600, color: '#212529', fontSize: '0.875rem' }}>{lead.dispensary_name}</span>
         <span className="stage-badge" style={{
           background: STAGE_BG_COLORS[lead.stage || 'New Lead'],
           color: STAGE_COLORS[lead.stage || 'New Lead'],
-          fontSize: '0.65rem', marginLeft: '0.5rem',
+          fontSize: '0.65rem',
         }}>
           {lead.stage || 'New Lead'}
         </span>
+        {renderBadges(badges)}
         {lead.manager_name && (
-          <span style={{ fontSize: '0.8rem', color: '#6c757d', marginLeft: '0.5rem' }}>{lead.manager_name}</span>
+          <span style={{ fontSize: '0.8rem', color: '#6c757d' }}>{lead.manager_name}</span>
         )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -524,18 +544,21 @@ function Dashboard() {
       </div>
     </Link>
   );
+  };
 
   return (
     <div className="dashboard">
       {/* Your Activity */}
       {briefing && (
         <div className="callbacks-section">
-          <h2><FaChartLine /> Your Activity {activityRange === 'day' ? 'Today' : activityRange === 'month' ? 'This Month' : 'This Week'}</h2>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem' }}>
+          <h2><FaChartLine /> Your Activity {activityRange === 'day' ? 'Today' : activityRange === 'yesterday' ? 'Yesterday' : activityRange === 'month' ? 'This Month' : activityRange === 'custom' && customFrom && customTo ? `${customFrom} — ${customTo}` : 'This Week'}</h2>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
             {[
               { key: 'day', label: 'Day' },
+              { key: 'yesterday', label: 'Yesterday' },
               { key: 'week', label: 'Week' },
               { key: 'month', label: 'Month' },
+              { key: 'custom', label: 'Custom' },
             ].map((opt) => (
               <button
                 key={opt.key}
@@ -555,6 +578,23 @@ function Dashboard() {
                 {opt.label}
               </button>
             ))}
+            {activityRange === 'custom' && (
+              <div style={{ display: 'flex', gap: '0.375rem', alignItems: 'center' }}>
+                <input
+                  type="date"
+                  value={customFrom}
+                  onChange={e => setCustomFrom(e.target.value)}
+                  style={{ padding: '0.2rem 0.4rem', fontSize: '0.8125rem', border: '1px solid #dee2e6', borderRadius: '6px' }}
+                />
+                <span style={{ fontSize: '0.8125rem', color: '#6c757d' }}>to</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  onChange={e => setCustomTo(e.target.value)}
+                  style={{ padding: '0.2rem 0.4rem', fontSize: '0.8125rem', border: '1px solid #dee2e6', borderRadius: '6px' }}
+                />
+              </div>
+            )}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1rem', padding: '0.5rem 0' }}>
             {[
@@ -564,7 +604,7 @@ function Dashboard() {
             ].map((stat) => {
               const TrendIcon = stat.trend?.icon || FaArrowRight;
               const isSelected = selectedCard === stat.key;
-              const lastLabel = activityRange === 'day' ? 'yesterday' : activityRange === 'month' ? 'last month' : 'last week';
+              const lastLabel = activityRange === 'day' ? 'yesterday' : activityRange === 'yesterday' ? 'day before' : activityRange === 'month' ? 'last month' : activityRange === 'custom' ? 'prev. period' : 'last week';
               return (
                 <div
                   key={stat.key}

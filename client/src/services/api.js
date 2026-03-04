@@ -70,10 +70,13 @@ export const leadsApi = {
   bulkStartCadence: (ids) => api.patch('/leads/bulk/cadence-start', { ids }),
 
   // Get daily briefing data
-  getBriefing: (range = 'week') => {
+  getBriefing: (range = 'week', from, to) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const todayDay = days[new Date().getDay()];
-    return api.get('/leads/briefing', { params: { day: todayDay, range } });
+    const params = { day: todayDay, range };
+    if (from) params.from = from;
+    if (to) params.to = to;
+    return api.get('/leads/briefing', { params });
   },
 
   // Get duplicate lead groups
