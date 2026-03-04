@@ -672,13 +672,11 @@ function LeadDetail() {
                 fontSize: '0.8125rem',
                 fontWeight: 600,
                 background: lead.call_status === 'completed' ? '#d1e7dd'
-                  : lead.call_status === 'ringing' ? '#cfe2ff'
                   : lead.call_status === 'failed' ? '#f8d7da'
                   : lead.call_status === 'voicemail' ? '#fef3c7'
                   : lead.call_status === 'no_answer' ? '#fff3e0'
                   : '#e9ecef',
                 color: lead.call_status === 'completed' ? '#198754'
-                  : lead.call_status === 'ringing' ? '#0d6efd'
                   : lead.call_status === 'failed' ? '#dc3545'
                   : lead.call_status === 'voicemail' ? '#92400e'
                   : lead.call_status === 'no_answer' ? '#e65100'

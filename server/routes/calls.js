@@ -424,7 +424,7 @@ router.post('/outbound', async (req, res) => {
 
     // Update lead record
     await run(
-      `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      `UPDATE leads SET vapi_call_id = $1, last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
       [vapiCallId, leadId]
     );
 
@@ -432,13 +432,6 @@ router.post('/outbound', async (req, res) => {
     if (lead.stage === 'New Lead') {
       await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Contacted', leadId]);
     }
-
-    // Log to call_logs
-    await run(
-      `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, started_at, metadata)
-       VALUES ($1, $2, 'outbound', 'ringing', CURRENT_TIMESTAMP, $3)`,
-      [leadId, vapiCallId, JSON.stringify(metadata)]
-    );
 
     // Log to contact_history
     await run(
@@ -528,7 +521,7 @@ router.post('/batch', async (req, res) => {
           const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides: buildAssistantOverrides(lead), metadata });
 
           await run(
-            `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+            `UPDATE leads SET vapi_call_id = $1, last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
             [vapiCall.id, lead.id]
           );
 
@@ -536,12 +529,6 @@ router.post('/batch', async (req, res) => {
           if (lead.stage === 'New Lead' || !lead.stage) {
             await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Contacted', lead.id]);
           }
-
-          await run(
-            `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, started_at, metadata)
-             VALUES ($1, $2, 'outbound', 'ringing', CURRENT_TIMESTAMP, $3)`,
-            [lead.id, vapiCall.id, JSON.stringify(metadata)]
-          );
 
           // Log to contact_history
           await run(
@@ -644,7 +631,7 @@ function startScheduleExecutor() {
 
             const vapiCall = await vapiService.createOutboundCall({ phoneNumber, assistantOverrides: buildAssistantOverrides(lead), metadata });
             await run(
-              `UPDATE leads SET vapi_call_id = $1, call_status = 'ringing', last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+              `UPDATE leads SET vapi_call_id = $1, last_called_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
               [vapiCall.id, lead.id]
             );
 
@@ -652,11 +639,6 @@ function startScheduleExecutor() {
             if (lead.stage === 'New Lead' || !lead.stage) {
               await run('UPDATE leads SET stage = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', ['Contacted', lead.id]);
             }
-
-            await run(
-              `INSERT INTO call_logs (lead_id, vapi_call_id, direction, status, started_at, metadata) VALUES ($1, $2, 'outbound', 'ringing', CURRENT_TIMESTAMP, $3)`,
-              [lead.id, vapiCall.id, JSON.stringify(metadata)]
-            );
 
             // Log to contact_history
             await run(

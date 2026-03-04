@@ -10,7 +10,6 @@ import { callsApi, leadsApi } from '../services/api';
 // ─── Status Badge Colors ─────────────────────────────────────────
 const CALL_STATUS_COLORS = {
   completed: { bg: '#d1e7dd', text: '#198754' },
-  ringing: { bg: '#cfe2ff', text: '#0d6efd' },
   no_answer: { bg: '#fff3e0', text: '#e65100' },
   busy: { bg: '#fff9c4', text: '#f9a825' },
   voicemail: { bg: '#e2d9f3', text: '#6f42c1' },
