@@ -918,9 +918,15 @@ router.post('/backfill', async (req, res) => {
         status = 'voicemail';
       }
 
-      // Check if call_logs already has a finalized entry (skip if it has real data)
+      // Check if call_logs already has a finalized entry
       const existing = await get('SELECT id, summary, recording_url FROM call_logs WHERE vapi_call_id = $1', [vapiCallId]);
-      if (existing && (existing.summary || existing.recording_url)) {
+      // Skip only if existing entry already has both summary and recording (or Vapi has nothing new)
+      if (existing && existing.summary && existing.recording_url) {
+        skipped++;
+        continue;
+      }
+      // Also skip if existing has summary and Vapi still has no recording
+      if (existing && existing.summary && !recordingUrl) {
         skipped++;
         continue;
       }
@@ -947,13 +953,20 @@ router.post('/backfill', async (req, res) => {
         );
       }
 
-      // Add contact_history entry (check for duplicates by looking for existing "AI Call Report" near this call's time)
+      // Add or update contact_history entry
       const callTime = call.endedAt || call.createdAt;
       if (callTime) {
         const existingHistory = await get(
-          `SELECT id FROM contact_history WHERE lead_id = $1 AND notes LIKE 'AI Call Report%' AND contact_date BETWEEN $2::timestamp - interval '5 minutes' AND $2::timestamp + interval '5 minutes'`,
+          `SELECT id, recording_url FROM contact_history WHERE lead_id = $1 AND notes LIKE 'AI Call Report%' AND contact_date BETWEEN $2::timestamp - interval '5 minutes' AND $2::timestamp + interval '5 minutes'`,
           [leadId, callTime]
         );
+        // Patch recording_url on existing history entry if it was missing
+        if (existingHistory && !existingHistory.recording_url && recordingUrl) {
+          await run(
+            `UPDATE contact_history SET recording_url = $1 WHERE id = $2`,
+            [recordingUrl, existingHistory.id]
+          );
+        }
         if (!existingHistory) {
           const parts = [`AI Call Report - Duration: ${duration ? `${Math.round(duration)}s` : 'N/A'}`];
           if (summary) parts.push(summary.substring(0, 500));
