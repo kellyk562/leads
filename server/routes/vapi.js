@@ -685,7 +685,8 @@ router.post('/call-status', async (req, res) => {
     if (message.analysis) console.log(`[call-status] analysis raw:`, JSON.stringify(message.analysis).substring(0, 500));
     console.log(`[call-status] summary=${message.summary ? message.summary.substring(0, 200) : 'null'}`);
 
-    const duration = message.durationSeconds || message.call?.duration || null;
+    const rawDuration = message.durationSeconds || message.call?.duration || null;
+    const duration = rawDuration != null ? Math.round(rawDuration) : null;
     // Build transcript from all possible Vapi sources
     let transcript = null;
     if (message.transcript) {
@@ -889,7 +890,7 @@ router.post('/backfill', async (req, res) => {
 
       const vapiCallId = call.id;
       const endedReason = call.endedReason || null;
-      const duration = call.duration || null;
+      const duration = call.duration != null ? Math.round(call.duration) : null;
       const transcript = call.transcript || null;
       const recordingUrl = call.recordingUrl || call.artifact?.recordingUrl || null;
       const cost = call.cost || null;
