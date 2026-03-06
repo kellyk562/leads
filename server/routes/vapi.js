@@ -806,13 +806,13 @@ router.post('/call-status', async (req, res) => {
         [leadId, parts.join('. '), `Call ${status}`, recordingUrl]
       );
 
-      // Auto-retry for voicemail/no_answer (max 2 retries)
+      // Auto-retry for voicemail/no_answer (max 1 retry)
       if (status === 'voicemail' || status === 'no_answer') {
         deferAsync('voicemail_retry:schedule', async () => {
           const lead = await get('SELECT voicemail_retry_count FROM leads WHERE id = $1', [leadId]);
           const retryCount = lead?.voicemail_retry_count || 0;
-          if (retryCount >= 2) {
-            console.log(`Voicemail retry skipped for lead ${leadId}: already retried ${retryCount} times (max 2)`);
+          if (retryCount >= 1) {
+            console.log(`Voicemail retry skipped for lead ${leadId}: already retried ${retryCount} times (max 1)`);
             return;
           }
           // Increment retry counter
