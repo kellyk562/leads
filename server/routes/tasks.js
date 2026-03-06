@@ -54,6 +54,17 @@ async function generateAutoReminders() {
   }
 }
 
+// Delete all pending auto-reminder tasks
+router.delete('/auto-reminders', async (req, res) => {
+  try {
+    const result = await db.run(`DELETE FROM tasks WHERE source = 'auto_reminder' AND status = 'pending'`);
+    res.json({ deleted: result.changes || 0 });
+  } catch (error) {
+    console.error('Error deleting auto reminders:', error);
+    res.status(500).json({ error: 'Failed to delete auto reminders' });
+  }
+});
+
 // Get all tasks with optional filtering
 router.get('/', async (req, res) => {
   try {
