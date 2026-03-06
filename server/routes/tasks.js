@@ -57,7 +57,6 @@ async function generateAutoReminders() {
 // Get all tasks with optional filtering
 router.get('/', async (req, res) => {
   try {
-    await generateAutoReminders();
     const { status, priority, lead_id, period } = req.query;
 
     let sql = `
